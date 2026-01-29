@@ -360,7 +360,7 @@ body.game-active #game {
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 22px),
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 22px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 1 / 1;
 }
 
 .player-marker {
