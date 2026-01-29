@@ -30,8 +30,8 @@ const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
 const FOG_RADIUS_PX = 250;
 const FOG_BLUR_PX = 8;
-const FOG_DARKNESS = 0.95;
-const FOG_FALLOFF_PX = 50;
+const FOG_DARKNESS = 0.85;
+const FOG_FALLOFF_PX = 100;
 
 function loadImage(path) {
   const image = new Image();
