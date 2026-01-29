@@ -26,12 +26,31 @@ const FLOOR = 0;
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
 
-const wallTilesImage = new Image();
-wallTilesImage.src = "assets/walls/Mountains_001_tiles.png";
-const wallTilesReady = new Promise((resolve) => {
-  wallTilesImage.onload = () => resolve(true);
-  wallTilesImage.onerror = () => resolve(false);
-});
+function loadImage(path) {
+  const image = new Image();
+  const ready = new Promise((resolve) => {
+    image.onload = () => resolve(true);
+    image.onerror = () => resolve(false);
+  });
+  image.src = path;
+  return { image, ready };
+}
+
+const wallTiles = loadImage("assets/walls/Mountains_001_tiles.png");
+const wallTilesImage = wallTiles.image;
+
+const characterImages = {
+  down: loadImage("assets/characters/human_001_face.png"),
+  up: loadImage("assets/characters/human_001_back.png"),
+  side: loadImage("assets/characters/human_001_side.png"),
+};
+
+const assetsReady = Promise.all([
+  wallTiles.ready,
+  characterImages.down.ready,
+  characterImages.up.ready,
+  characterImages.side.ready,
+]);
 
 const WALL_TILE_SOURCES = [
   { x: 0, y: 0 },
@@ -48,6 +67,33 @@ const WALL_TILE_SOURCES = [
   { x: 48, y: 32 },
   { x: 0, y: 48 },
 ];
+
+const playerSprites = {
+  down: {
+    image: characterImages.down.image,
+    idleFrame: 2,
+    moveFrames: [0, 1],
+    flip: false,
+  },
+  up: {
+    image: characterImages.up.image,
+    idleFrame: 2,
+    moveFrames: [0, 1],
+    flip: false,
+  },
+  right: {
+    image: characterImages.side.image,
+    idleFrame: 0,
+    moveFrames: [0, 1],
+    flip: false,
+  },
+  left: {
+    image: characterImages.side.image,
+    idleFrame: 0,
+    moveFrames: [0, 1],
+    flip: true,
+  },
+};
 
 let controlsOpen = false;
 let tutorialIndex = 0;
@@ -66,6 +112,9 @@ const player = {
   y: 0,
   radius: 0.32,
   speed: 4,
+  direction: "down",
+  moving: false,
+  animTime: 0,
 };
 
 const keys = new Set();
@@ -189,28 +238,28 @@ function carveOpening(grid, side) {
   if (side === "top") {
     for (let x = 1; x < cols - 1; x += 1) {
       if (grid[1][x] === FLOOR) {
-        candidates.push({ x, y: 0, insideX: x, insideY: 1 });
+        candidates.push({ x, y: 0, insideX: x, insideY: 1, side });
       }
     }
   }
   if (side === "bottom") {
     for (let x = 1; x < cols - 1; x += 1) {
       if (grid[rows - 2][x] === FLOOR) {
-        candidates.push({ x, y: rows - 1, insideX: x, insideY: rows - 2 });
+        candidates.push({ x, y: rows - 1, insideX: x, insideY: rows - 2, side });
       }
     }
   }
   if (side === "left") {
     for (let y = 1; y < rows - 1; y += 1) {
       if (grid[y][1] === FLOOR) {
-        candidates.push({ x: 0, y, insideX: 1, insideY: y });
+        candidates.push({ x: 0, y, insideX: 1, insideY: y, side });
       }
     }
   }
   if (side === "right") {
     for (let y = 1; y < rows - 1; y += 1) {
       if (grid[y][cols - 2] === FLOOR) {
-        candidates.push({ x: cols - 1, y, insideX: cols - 2, insideY: y });
+        candidates.push({ x: cols - 1, y, insideX: cols - 2, insideY: y, side });
       }
     }
   }
@@ -264,15 +313,17 @@ function buildMaze() {
     ? {
         x: entry.insideX * 2 + 1,
         y: entry.insideY * 2 + 1,
+        side: entry.side,
       }
-    : { x: 1, y: 1 };
+    : { x: 1, y: 1, side: "top" };
 
   const exitHigh = exit
     ? {
         x: exit.insideX * 2 + 1,
         y: exit.insideY * 2 + 1,
+        side: exit.side,
       }
-    : { x: highGrid[0].length - 2, y: highGrid.length - 2 };
+    : { x: highGrid[0].length - 2, y: highGrid.length - 2, side: "bottom" };
 
   return { grid: highGrid, entry: entryHigh, exit: exitHigh };
 }
@@ -397,12 +448,81 @@ function updatePlayer(delta) {
   if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
   if (keys.has("d") || keys.has("arrowright")) dx += 1;
 
+  player.moving = dx !== 0 || dy !== 0;
+
+  if (player.moving) {
+    if (dy < 0) player.direction = "up";
+    else if (dy > 0) player.direction = "down";
+    else if (dx < 0) player.direction = "left";
+    else if (dx > 0) player.direction = "right";
+    player.animTime += delta;
+  } else {
+    player.animTime = 0;
+  }
+
   if (dx !== 0 && dy !== 0) {
     movePlayer(dx, 0, delta);
     movePlayer(0, dy, delta);
   } else {
     movePlayer(dx, dy, delta);
   }
+}
+
+function getPlayerFrame() {
+  const sprite = playerSprites[player.direction] || playerSprites.down;
+  const frame = player.moving
+    ? sprite.moveFrames[Math.floor(player.animTime * 6) % sprite.moveFrames.length]
+    : sprite.idleFrame;
+  return { sprite, frame };
+}
+
+function renderPlayer() {
+  const { sprite, frame } = getPlayerFrame();
+  if (!sprite || !sprite.image.complete) {
+    ctx.fillStyle = "#d5cdc0";
+    ctx.beginPath();
+    ctx.arc(
+      player.x * TILE_SIZE - camera.x,
+      player.y * TILE_SIZE - camera.y,
+      player.radius * TILE_SIZE,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    return;
+  }
+
+  const dx = player.x * TILE_SIZE - camera.x - TILE_SIZE / 2;
+  const dy = player.y * TILE_SIZE - camera.y - TILE_SIZE / 2;
+
+  ctx.save();
+  if (sprite.flip) {
+    ctx.scale(-1, 1);
+    ctx.drawImage(
+      sprite.image,
+      frame * SOURCE_TILE_SIZE,
+      0,
+      SOURCE_TILE_SIZE,
+      SOURCE_TILE_SIZE,
+      -(dx + TILE_SIZE),
+      dy,
+      TILE_SIZE,
+      TILE_SIZE
+    );
+  } else {
+    ctx.drawImage(
+      sprite.image,
+      frame * SOURCE_TILE_SIZE,
+      0,
+      SOURCE_TILE_SIZE,
+      SOURCE_TILE_SIZE,
+      dx,
+      dy,
+      TILE_SIZE,
+      TILE_SIZE
+    );
+  }
+  ctx.restore();
 }
 
 function renderMaze(grid) {
@@ -463,16 +583,7 @@ function renderMaze(grid) {
     }
   }
 
-  ctx.fillStyle = "#d5cdc0";
-  ctx.beginPath();
-  ctx.arc(
-    player.x * TILE_SIZE - camera.x,
-    player.y * TILE_SIZE - camera.y,
-    player.radius * TILE_SIZE,
-    0,
-    Math.PI * 2
-  );
-  ctx.fill();
+  renderPlayer();
 }
 
 function gameLoop(timestamp) {
@@ -487,13 +598,21 @@ function gameLoop(timestamp) {
 }
 
 async function generateAndRenderMaze() {
-  await wallTilesReady;
+  await assetsReady;
   const { grid, entry, exit } = buildMaze();
   currentMaze = grid;
   currentEntry = entry;
   currentExit = exit;
   player.x = entry.x + 0.5;
   player.y = entry.y + 0.5;
+  player.moving = false;
+  player.animTime = 0;
+
+  if (entry.side === "top") player.direction = "down";
+  if (entry.side === "bottom") player.direction = "up";
+  if (entry.side === "left") player.direction = "right";
+  if (entry.side === "right") player.direction = "left";
+
   updateCamera();
   renderMaze(grid);
   if (!animationId) {
@@ -612,7 +731,18 @@ document.addEventListener("keydown", (event) => {
     setControlsOpen(!controlsOpen);
     return;
   }
-  if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+  if (
+    [
+      "w",
+      "a",
+      "s",
+      "d",
+      "arrowup",
+      "arrowdown",
+      "arrowleft",
+      "arrowright",
+    ].includes(key)
+  ) {
     keys.add(key);
   }
 });
