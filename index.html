@@ -37,20 +37,18 @@
             <div class="panel">
               <h3>Vitality</h3>
               <div class="health-bar">
-                <span style="width: 68%"></span>
+                <span id="health-fill" style="width: 100%"></span>
               </div>
               <div class="health-meta">
-                <span>68%</span>
+                <span id="health-value">100%</span>
                 <span>Mask: Ash</span>
               </div>
             </div>
 
             <div class="panel">
-              <h3>Active Timers</h3>
-              <ul class="timers">
-                <li><span>Ward cooldown</span><span>00:18</span></li>
-                <li><span>Lantern burn</span><span>02:44</span></li>
-                <li><span>Echo pulse</span><span>00:52</span></li>
+              <h3>Events</h3>
+              <ul class="events" id="event-list">
+                <li><span>Yellow Mask</span><span id="event-yellow-mask">Inactive</span></li>
               </ul>
             </div>
 

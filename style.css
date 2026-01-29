@@ -254,7 +254,8 @@ body.game-active #game {
   color: var(--text-200);
 }
 
-.timers {
+.timers,
+.events {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -264,7 +265,8 @@ body.game-active #game {
   font-size: 0.9rem;
 }
 
-.timers li {
+.timers li,
+.events li {
   display: flex;
   justify-content: space-between;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);

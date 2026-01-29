@@ -11,6 +11,9 @@ const nextTutorial = document.getElementById("next-tutorial");
 const skipTutorial = document.getElementById("skip-tutorial");
 const controlsPanel = document.getElementById("controls-panel");
 const closeControls = document.getElementById("close-controls");
+const eventYellowMask = document.getElementById("event-yellow-mask");
+const healthFill = document.getElementById("health-fill");
+const healthValue = document.getElementById("health-value");
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
 const sceneCanvas = document.createElement("canvas");
@@ -41,6 +44,15 @@ const MASK_ITEM_COUNT = 150;
 const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
+const PLAYER_MAX_HEALTH = 100;
+
+const SKELETON_COUNT = 6;
+const SKELETON_SPEED = 2.2;
+const SKELETON_RADIUS = 0.32;
+const SKELETON_CHASE_RANGE = 9;
+const SKELETON_WANDER_TIME = 1.6;
+const SKELETON_CONTACT_DPS = 12;
+const SKELETON_CONTACT_COOLDOWN = 0.35;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -99,6 +111,12 @@ const yellowCharacterImages = {
 
 const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
 
+const skeletonImages = {
+  down: loadImage("assets/characters/skeleton_001_face.png"),
+  up: loadImage("assets/characters/skeleton_001_back.png"),
+  side: loadImage("assets/characters/skeleton_001_side.png"),
+};
+
 const assetsReady = Promise.all([
   wallTiles.ready,
   characterImages.down.ready,
@@ -108,6 +126,9 @@ const assetsReady = Promise.all([
   yellowCharacterImages.up.ready,
   yellowCharacterImages.side.ready,
   yellowMaskItem.ready,
+  skeletonImages.down.ready,
+  skeletonImages.up.ready,
+  skeletonImages.side.ready,
 ]);
 
 const WALL_TILE_SOURCES = [
@@ -157,6 +178,7 @@ function buildPlayerSprites(imageSet) {
 
 const playerSprites = buildPlayerSprites(characterImages);
 const playerYellowSprites = buildPlayerSprites(yellowCharacterImages);
+const skeletonSprites = buildPlayerSprites(skeletonImages);
 
 let controlsOpen = false;
 let tutorialIndex = 0;
@@ -173,6 +195,8 @@ let fogRadiusCurrent = FOG_RADIUS_BASE;
 let fogRadiusVelocity = 0;
 let fogDarknessCurrent = FOG_DARKNESS_BASE;
 let fogDarknessVelocity = 0;
+let skeletons = [];
+let contactCooldown = 0;
 
 const camera = { x: 0, y: 0 };
 
@@ -181,6 +205,7 @@ const player = {
   y: 0,
   radius: 0.32,
   speed: PLAYER_SPEED,
+  health: PLAYER_MAX_HEALTH,
   direction: "down",
   moving: false,
   animTime: 0,
@@ -437,6 +462,43 @@ function spawnYellowMasks(grid, entry, exit, count) {
   }));
 }
 
+function spawnSkeletons(grid, entry, exit, count) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const candidates = [];
+
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (grid[y][x] !== FLOOR) continue;
+      const distEntry = entry
+        ? Math.abs(x - entry.x) + Math.abs(y - entry.y)
+        : 9999;
+      const distExit = exit
+        ? Math.abs(x - exit.x) + Math.abs(y - exit.y)
+        : 9999;
+      if (distEntry < 10 || distExit < 8) continue;
+      candidates.push({ x, y });
+    }
+  }
+
+  for (let i = candidates.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  return candidates.slice(0, count).map((point) => ({
+    x: point.x + 0.5,
+    y: point.y + 0.5,
+    radius: SKELETON_RADIUS,
+    speed: SKELETON_SPEED,
+    direction: "down",
+    moving: false,
+    animTime: 0,
+    wanderTimer: Math.random() * SKELETON_WANDER_TIME,
+    wanderDir: { x: 0, y: 0 },
+  }));
+}
+
 function isWall(grid, x, y) {
   if (!grid) return true;
   if (y < 0 || y >= grid.length || x < 0 || x >= grid[0].length) {
@@ -500,6 +562,30 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+function formatTime(seconds) {
+  const safeSeconds = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const secs = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function updateHealthUI() {
+  if (!healthFill || !healthValue) return;
+  const clamped = clamp(player.health, 0, PLAYER_MAX_HEALTH);
+  const percent = Math.round((clamped / PLAYER_MAX_HEALTH) * 100);
+  healthFill.style.width = `${percent}%`;
+  healthValue.textContent = `${percent}%`;
+}
+
+function updateEventsUI() {
+  if (!eventYellowMask) return;
+  if (yellowMaskTimer > 0) {
+    eventYellowMask.textContent = formatTime(yellowMaskTimer);
+  } else {
+    eventYellowMask.textContent = "Inactive";
+  }
+}
+
 function updateCamera() {
   if (!currentMaze) return;
   const worldWidth = currentMaze[0].length * TILE_SIZE;
@@ -510,13 +596,12 @@ function updateCamera() {
   camera.y = clamp(camera.y, 0, Math.max(0, worldHeight - canvas.height));
 }
 
-function canMoveTo(x, y) {
+function canMoveEntity(x, y, radius) {
   if (!currentMaze) return false;
-  const r = player.radius;
-  const minX = Math.floor(x - r);
-  const maxX = Math.floor(x + r);
-  const minY = Math.floor(y - r);
-  const maxY = Math.floor(y + r);
+  const minX = Math.floor(x - radius);
+  const maxX = Math.floor(x + radius);
+  const minY = Math.floor(y - radius);
+  const maxY = Math.floor(y + radius);
 
   for (let ty = minY; ty <= maxY; ty += 1) {
     for (let tx = minX; tx <= maxX; tx += 1) {
@@ -529,21 +614,18 @@ function canMoveTo(x, y) {
   return true;
 }
 
-function movePlayer(dx, dy, delta) {
-  if (!currentMaze) return;
-  const step = player.speed * delta;
-
+function moveEntity(entity, dx, dy, delta) {
+  const step = entity.speed * delta;
   if (dx !== 0) {
-    const nextX = player.x + dx * step;
-    if (canMoveTo(nextX, player.y)) {
-      player.x = nextX;
+    const nextX = entity.x + dx * step;
+    if (canMoveEntity(nextX, entity.y, entity.radius)) {
+      entity.x = nextX;
     }
   }
-
   if (dy !== 0) {
-    const nextY = player.y + dy * step;
-    if (canMoveTo(player.x, nextY)) {
-      player.y = nextY;
+    const nextY = entity.y + dy * step;
+    if (canMoveEntity(entity.x, nextY, entity.radius)) {
+      entity.y = nextY;
     }
   }
 }
@@ -570,16 +652,38 @@ function updatePlayer(delta) {
   }
 
   if (dx !== 0 && dy !== 0) {
-    movePlayer(dx, 0, delta);
-    movePlayer(0, dy, delta);
+    moveEntity(player, dx, 0, delta);
+    moveEntity(player, 0, dy, delta);
   } else {
-    movePlayer(dx, dy, delta);
+    moveEntity(player, dx, dy, delta);
   }
 }
 
 function updateMaskTimer(delta) {
   if (yellowMaskTimer > 0) {
     yellowMaskTimer = Math.max(0, yellowMaskTimer - delta);
+  }
+}
+
+function applySkeletonContact(delta) {
+  if (!skeletons.length || player.health <= 0) return;
+  contactCooldown = Math.max(0, contactCooldown - delta);
+  if (contactCooldown > 0) return;
+
+  const hitRadius = player.radius + SKELETON_RADIUS;
+  const hitRadiusSq = hitRadius * hitRadius;
+
+  for (const skeleton of skeletons) {
+    const dx = player.x - skeleton.x;
+    const dy = player.y - skeleton.y;
+    if (dx * dx + dy * dy <= hitRadiusSq) {
+      player.health = Math.max(
+        0,
+        player.health - SKELETON_CONTACT_DPS * delta
+      );
+      contactCooldown = SKELETON_CONTACT_COOLDOWN;
+      break;
+    }
   }
 }
 
@@ -637,12 +741,72 @@ function updateFog(delta) {
   fogDarknessVelocity = darknessSpring.velocity;
 }
 
+function updateSkeletons(delta) {
+  if (!skeletons.length) return;
+
+  for (const skeleton of skeletons) {
+    const toPlayerX = player.x - skeleton.x;
+    const toPlayerY = player.y - skeleton.y;
+    const distSq = toPlayerX * toPlayerX + toPlayerY * toPlayerY;
+    const chaseRangeSq = SKELETON_CHASE_RANGE * SKELETON_CHASE_RANGE;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (distSq < chaseRangeSq) {
+      const dist = Math.sqrt(distSq) || 1;
+      dx = toPlayerX / dist;
+      dy = toPlayerY / dist;
+    } else {
+      skeleton.wanderTimer -= delta;
+      if (skeleton.wanderTimer <= 0) {
+        skeleton.wanderTimer = SKELETON_WANDER_TIME + Math.random();
+        const dirIndex = Math.floor(Math.random() * 5);
+        if (dirIndex === 0) skeleton.wanderDir = { x: 1, y: 0 };
+        else if (dirIndex === 1) skeleton.wanderDir = { x: -1, y: 0 };
+        else if (dirIndex === 2) skeleton.wanderDir = { x: 0, y: 1 };
+        else if (dirIndex === 3) skeleton.wanderDir = { x: 0, y: -1 };
+        else skeleton.wanderDir = { x: 0, y: 0 };
+      }
+      dx = skeleton.wanderDir.x;
+      dy = skeleton.wanderDir.y;
+    }
+
+    skeleton.moving = dx !== 0 || dy !== 0;
+    if (skeleton.moving) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        skeleton.direction = dx > 0 ? "right" : "left";
+      } else if (dy !== 0) {
+        skeleton.direction = dy > 0 ? "down" : "up";
+      }
+      skeleton.animTime += delta;
+    } else {
+      skeleton.animTime = 0;
+    }
+
+    if (dx !== 0 && dy !== 0) {
+      moveEntity(skeleton, dx, 0, delta);
+      moveEntity(skeleton, 0, dy, delta);
+    } else {
+      moveEntity(skeleton, dx, dy, delta);
+    }
+  }
+}
+
 function getPlayerFrame() {
   const activeSprites = yellowMaskTimer > 0 ? playerYellowSprites : playerSprites;
   const sprite = activeSprites[player.direction] || activeSprites.down;
   const frame = player.moving
     ? sprite.moveFrames[Math.floor(player.animTime * 6) % sprite.moveFrames.length]
     : sprite.idleFrame;
+  return { sprite, frame };
+}
+
+function getSkeletonFrame(skeleton) {
+  const sprite = skeletonSprites[skeleton.direction] || skeletonSprites.down;
+  const frame = skeleton.moving
+    ? sprite.moveFrames[Math.floor(skeleton.animTime * 6) % sprite.moveFrames.length]
+    : 0;
   return { sprite, frame };
 }
 
@@ -695,6 +859,62 @@ function renderPlayer() {
   sceneCtx.restore();
 }
 
+function renderSkeletons(startCol, endCol, startRow, endRow) {
+  for (const skeleton of skeletons) {
+    const sx = Math.floor(skeleton.x);
+    const sy = Math.floor(skeleton.y);
+    if (sx < startCol - 2 || sx > endCol + 2) continue;
+    if (sy < startRow - 2 || sy > endRow + 2) continue;
+
+    const { sprite, frame } = getSkeletonFrame(skeleton);
+    if (!sprite || !sprite.image.complete) {
+      sceneCtx.fillStyle = "#bdb3a3";
+      sceneCtx.beginPath();
+      sceneCtx.arc(
+        skeleton.x * TILE_SIZE - camera.x,
+        skeleton.y * TILE_SIZE - camera.y,
+        skeleton.radius * TILE_SIZE,
+        0,
+        Math.PI * 2
+      );
+      sceneCtx.fill();
+      continue;
+    }
+
+    const dx = skeleton.x * TILE_SIZE - camera.x - TILE_SIZE / 2;
+    const dy = skeleton.y * TILE_SIZE - camera.y - TILE_SIZE / 2;
+
+    sceneCtx.save();
+    if (sprite.flip) {
+      sceneCtx.scale(-1, 1);
+      sceneCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        -(dx + TILE_SIZE),
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    } else {
+      sceneCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+    sceneCtx.restore();
+  }
+}
+
 function renderMaskItems(startCol, endCol, startRow, endRow) {
   if (!maskItems.length) return;
 
@@ -702,12 +922,10 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
     if (item.collected) continue;
     if (item.x < startCol - 1 || item.x > endCol + 1) continue;
     if (item.y < startRow - 1 || item.y > endRow + 1) continue;
+    if (!yellowMaskItem.image.complete) continue;
 
     const cx = (item.x + 0.5) * TILE_SIZE - camera.x;
     const cy = (item.y + 0.5) * TILE_SIZE - camera.y;
-    if (!yellowMaskItem.image.complete) {
-      continue;
-    }
 
     const imgW = yellowMaskItem.image.width || SOURCE_TILE_SIZE;
     const imgH = yellowMaskItem.image.height || SOURCE_TILE_SIZE;
@@ -789,6 +1007,7 @@ function renderMaze(grid) {
   }
 
   renderMaskItems(startCol, endCol, startRow, endRow);
+  renderSkeletons(startCol, endCol, startRow, endRow);
   renderPlayer();
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -828,9 +1047,13 @@ function gameLoop(timestamp) {
   const delta = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
   updatePlayer(delta);
+  updateSkeletons(delta);
+  applySkeletonContact(delta);
   checkMaskPickup();
   updateMaskTimer(delta);
   updateFog(delta);
+  updateEventsUI();
+  updateHealthUI();
   updateCamera();
   if (currentMaze) {
     renderMaze(currentMaze);
@@ -845,11 +1068,13 @@ async function generateAndRenderMaze() {
   currentEntry = entry;
   currentExit = exit;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
+  skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
   yellowMaskTimer = 0;
   fogRadiusCurrent = FOG_RADIUS_BASE;
   fogRadiusVelocity = 0;
   fogDarknessCurrent = FOG_DARKNESS_BASE;
   fogDarknessVelocity = 0;
+  player.health = PLAYER_MAX_HEALTH;
   player.x = entry.x + 0.5;
   player.y = entry.y + 0.5;
   player.moving = false;
@@ -862,6 +1087,8 @@ async function generateAndRenderMaze() {
 
   updateCamera();
   syncSceneSize();
+  updateEventsUI();
+  updateHealthUI();
   renderMaze(grid);
   if (!animationId) {
     lastFrameTime = performance.now();
