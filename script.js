@@ -46,11 +46,12 @@ const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
-const LAKE_COUNT = 2;
-const LAKE_MIN_CELLS = 80;
-const LAKE_MAX_CELLS = 180;
-const LAKE_RECT_CHANCE = 0.35;
-const LAKE_ENTRY_BUFFER = 3;
+const LAKE_COUNT = 3;
+const LAKE_MIN_CELLS = 140;
+const LAKE_MAX_CELLS = 320;
+const LAKE_RECT_CHANCE = 0.2;
+const LAKE_ENTRY_BUFFER = 4;
+const LAKE_SMOOTH_PASSES = 2;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -498,10 +499,7 @@ function generateLakesCells(cellCols, cellRows) {
     x >= cellCols - LAKE_ENTRY_BUFFER ||
     y >= cellRows - LAKE_ENTRY_BUFFER;
 
-  const inBuffer = (x, y) => {
-    if (inBorderBuffer(x, y)) return true;
-    return false;
-  };
+  const inBuffer = (x, y) => inBorderBuffer(x, y);
 
   const addBlob = (seedX, seedY, targetSize) => {
     const blob = [{ x: seedX, y: seedY }];
@@ -525,6 +523,37 @@ function generateLakesCells(cellCols, cellRows) {
       if (inBuffer(nx, ny)) continue;
       lakeCells[ny][nx] = true;
       blob.push({ x: nx, y: ny });
+    }
+  };
+
+  const smoothLakes = () => {
+    for (let pass = 0; pass < LAKE_SMOOTH_PASSES; pass += 1) {
+      const next = lakeCells.map((row) => row.slice());
+      for (let y = 0; y < cellRows; y += 1) {
+        for (let x = 0; x < cellCols; x += 1) {
+          if (inBuffer(x, y)) continue;
+          let neighbors = 0;
+          for (let oy = -1; oy <= 1; oy += 1) {
+            for (let ox = -1; ox <= 1; ox += 1) {
+              if (ox === 0 && oy === 0) continue;
+              const nx = x + ox;
+              const ny = y + oy;
+              if (nx < 0 || nx >= cellCols || ny < 0 || ny >= cellRows) continue;
+              if (lakeCells[ny][nx]) neighbors += 1;
+            }
+          }
+          if (lakeCells[y][x]) {
+            if (neighbors <= 2) next[y][x] = false;
+          } else if (neighbors >= 5) {
+            next[y][x] = true;
+          }
+        }
+      }
+      for (let y = 0; y < cellRows; y += 1) {
+        for (let x = 0; x < cellCols; x += 1) {
+          lakeCells[y][x] = next[y][x];
+        }
+      }
     }
   };
 
@@ -552,8 +581,8 @@ function generateLakesCells(cellCols, cellRows) {
       LAKE_MIN_CELLS + Math.random() * (LAKE_MAX_CELLS - LAKE_MIN_CELLS + 1)
     );
     if (Math.random() < LAKE_RECT_CHANCE) {
-      const width = Math.max(2, Math.round(Math.sqrt(size) + Math.random() * 2));
-      const height = Math.max(2, Math.round(size / width));
+      const width = Math.max(3, Math.round(Math.sqrt(size) + Math.random() * 3));
+      const height = Math.max(3, Math.round(size / width));
       addRect(x, y, width, height);
     } else {
       addBlob(x, y, size);
@@ -561,6 +590,7 @@ function generateLakesCells(cellCols, cellRows) {
     placed += 1;
   }
 
+  smoothLakes();
   return lakeCells;
 }
 
