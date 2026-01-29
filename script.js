@@ -135,6 +135,8 @@ const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
 const knifeItem = loadImage("assets/items/knife_001.png");
 const lakeTiles = loadImage("assets/lakes/lake_001_tiles.png");
 const lakeTilesImage = lakeTiles.image;
+const groundTiles = loadImage("assets/grounds/tiles_beige_soil_001.png");
+const groundTilesImage = groundTiles.image;
 
 const skeletonImages = {
   down: loadImage("assets/characters/skeleton_001_face.png"),
@@ -154,6 +156,7 @@ const assetsReady = Promise.all([
   yellowMaskItem.ready,
   knifeItem.ready,
   lakeTiles.ready,
+  groundTiles.ready,
   skeletonImages.down.ready,
   skeletonImages.up.ready,
   skeletonImages.side.ready,
@@ -177,6 +180,13 @@ const WALL_TILE_SOURCES = [
 ];
 
 const LAKE_TILE_SOURCES = WALL_TILE_SOURCES;
+
+const GROUND_TILE_SOURCES = [
+  { x: 0, y: 0 },
+  { x: 16, y: 0 },
+  { x: 0, y: 16 },
+  { x: 16, y: 16 },
+];
 
 function buildPlayerSprites(imageSet) {
   return {
@@ -233,6 +243,7 @@ let knifeCooldown = 0;
 let lastArrowDir = { x: 0, y: -1 };
 let commandBuffer = "";
 let commandBufferTimer = 0;
+let groundVariantMap = null;
 
 const camera = { x: 0, y: 0 };
 
@@ -473,6 +484,7 @@ function buildMaze() {
   const highGrid = upscaleGrid(lowGrid, 2);
   applyLakes(highGrid, lakeMask);
   openLakeEdgesEven(highGrid);
+  const groundVariants = generateGroundVariants(highGrid);
 
   const entryHigh = entry
     ? {
@@ -490,7 +502,21 @@ function buildMaze() {
       }
     : { x: highGrid[0].length - 2, y: highGrid.length - 2, side: "bottom" };
 
-  return { grid: highGrid, entry: entryHigh, exit: exitHigh };
+  return { grid: highGrid, entry: entryHigh, exit: exitHigh, groundVariants };
+}
+
+function generateGroundVariants(highGrid) {
+  const rows = highGrid.length;
+  const cols = highGrid[0].length;
+  const variants = new Array(rows).fill(null).map(() => new Array(cols).fill(0));
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (highGrid[y][x] === FLOOR) {
+        variants[y][x] = Math.floor(Math.random() * 4);
+      }
+    }
+  }
+  return variants;
 }
 
 function generateLakeMask(cols, rows) {
@@ -1616,15 +1642,34 @@ function renderMaze(grid) {
     rows - 1
   );
 
-  sceneCtx.fillStyle = "#141210";
   for (let y = startRow; y <= endRow; y += 1) {
     for (let x = startCol; x <= endCol; x += 1) {
       if (grid[y][x] !== FLOOR) {
         continue;
       }
+      const variant =
+        groundVariantMap && groundVariantMap[y]
+          ? groundVariantMap[y][x] ?? 0
+          : 0;
+      const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
       const dx = x * TILE_SIZE - camera.x;
       const dy = y * TILE_SIZE - camera.y;
-      sceneCtx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+      if (groundTilesImage.complete) {
+        sceneCtx.drawImage(
+          groundTilesImage,
+          source.x,
+          source.y,
+          SOURCE_TILE_SIZE,
+          SOURCE_TILE_SIZE,
+          dx,
+          dy,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      } else {
+        sceneCtx.fillStyle = "#141210";
+        sceneCtx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+      }
     }
   }
 
@@ -1730,11 +1775,30 @@ function renderFullMapToCanvas(grid) {
   mapCtx.fillStyle = "#0b0a08";
   mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
 
-  mapCtx.fillStyle = "#141210";
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
       if (grid[y][x] !== FLOOR) continue;
-      mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      const variant =
+        groundVariantMap && groundVariantMap[y]
+          ? groundVariantMap[y][x] ?? 0
+          : 0;
+      const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
+      if (groundTilesImage.complete) {
+        mapCtx.drawImage(
+          groundTilesImage,
+          source.x,
+          source.y,
+          SOURCE_TILE_SIZE,
+          SOURCE_TILE_SIZE,
+          x * TILE_SIZE,
+          y * TILE_SIZE,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      } else {
+        mapCtx.fillStyle = "#141210";
+        mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
     }
   }
 
@@ -1822,10 +1886,11 @@ function gameLoop(timestamp) {
 
 async function generateAndRenderMaze() {
   await assetsReady;
-  const { grid, entry, exit } = buildMaze();
+  const { grid, entry, exit, groundVariants } = buildMaze();
   currentMaze = grid;
   currentEntry = entry;
   currentExit = exit;
+  groundVariantMap = groundVariants;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
   knives = [];
