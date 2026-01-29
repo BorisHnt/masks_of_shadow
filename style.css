@@ -87,7 +87,7 @@ body::before {
 
 .title {
   font-family: "IM Fell English SC", serif;
-  font-size: clamp(3.6rem, 7vw, 6.8rem);
+  font-size: clamp(4rem, 7vw, 8rem);
   margin: 0 0 12px;
   letter-spacing: 0.04em;
 }
