@@ -47,14 +47,11 @@ const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
 const LAKE_COUNT = 3;
-const LAKE_MIN_CELLS = 140;
-const LAKE_MAX_CELLS = 320;
-const LAKE_RECT_CHANCE = 0.2;
-const LAKE_ENTRY_BUFFER = 4;
-const LAKE_SMOOTH_PASSES = 1;
 const LAKE_STAMPS_MIN = 6;
 const LAKE_STAMPS_MAX = 14;
-const LAKE_MIN_COMPONENT_CELLS = 20;
+const LAKE_ENTRY_BUFFER = 6;
+const LAKE_SMOOTH_PASSES = 1;
+const LAKE_MIN_COMPONENT_TILES = 120;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -463,11 +460,17 @@ function upscaleGrid(grid, scale) {
 }
 
 function buildMaze() {
-  const lakeCells = generateLakesCells(MAZE_CELL_COLS, MAZE_CELL_ROWS);
-  const lowGrid = generateMazePrim(MAZE_CELL_COLS, MAZE_CELL_ROWS, lakeCells);
+  const lowCols = MAZE_CELL_COLS * 2 + 1;
+  const lowRows = MAZE_CELL_ROWS * 2 + 1;
+  const highCols = lowCols * 2;
+  const highRows = lowRows * 2;
+
+  const lakeMask = generateLakeMask(highCols, highRows);
+  const blockedCells = buildLakeBlockMap(lakeMask);
+  const lowGrid = generateMazePrim(MAZE_CELL_COLS, MAZE_CELL_ROWS, blockedCells);
   const { entry, exit } = carveEntrances(lowGrid);
   const highGrid = upscaleGrid(lowGrid, 2);
-  applyLakes(highGrid, lakeCells);
+  applyLakes(highGrid, lakeMask);
 
   const entryHigh = entry
     ? {
@@ -488,28 +491,21 @@ function buildMaze() {
   return { grid: highGrid, entry: entryHigh, exit: exitHigh };
 }
 
-function generateLakesCells(cellCols, cellRows) {
-  const lakeCells = new Array(cellRows).fill(null).map(() => new Array(cellCols).fill(false));
-
-  const isBlockedCell = (x, y) => {
-    if (lakeCells[y][x]) return true;
-    return false;
-  };
+function generateLakeMask(cols, rows) {
+  const lakeMask = new Array(rows).fill(null).map(() => new Array(cols).fill(false));
 
   const inBorderBuffer = (x, y) =>
     x < LAKE_ENTRY_BUFFER ||
     y < LAKE_ENTRY_BUFFER ||
-    x >= cellCols - LAKE_ENTRY_BUFFER ||
-    y >= cellRows - LAKE_ENTRY_BUFFER;
-
-  const inBuffer = (x, y) => inBorderBuffer(x, y);
+    x >= cols - LAKE_ENTRY_BUFFER ||
+    y >= rows - LAKE_ENTRY_BUFFER;
 
   const stampRect = (seedX, seedY, width, height) => {
     for (let y = seedY; y < seedY + height; y += 1) {
       for (let x = seedX; x < seedX + width; x += 1) {
-        if (x < 0 || x >= cellCols || y < 0 || y >= cellRows) continue;
-        if (inBuffer(x, y)) continue;
-        lakeCells[y][x] = true;
+        if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+        if (inBorderBuffer(x, y)) continue;
+        lakeMask[y][x] = true;
       }
     }
   };
@@ -522,9 +518,10 @@ function generateLakesCells(cellCols, cellRows) {
       [8, 8],
       [6, 12],
       [10, 6],
+      [12, 16],
     ];
     const [tw, th] = tileSizes[Math.floor(Math.random() * tileSizes.length)];
-    return [Math.max(1, Math.round(tw / 2)), Math.max(1, Math.round(th / 2))];
+    return [tw, th];
   };
 
   const addBlob = (seedX, seedY) => {
@@ -533,76 +530,61 @@ function generateLakesCells(cellCols, cellRows) {
     );
     for (let i = 0; i < stamps; i += 1) {
       const [w, h] = pickChunkSize();
-      const offsetX = Math.floor((Math.random() - 0.5) * 6);
-      const offsetY = Math.floor((Math.random() - 0.5) * 6);
+      const offsetX = Math.floor((Math.random() - 0.5) * 12);
+      const offsetY = Math.floor((Math.random() - 0.5) * 12);
       stampRect(seedX + offsetX, seedY + offsetY, w, h);
     }
   };
 
   const smoothLakes = () => {
     for (let pass = 0; pass < LAKE_SMOOTH_PASSES; pass += 1) {
-      const next = lakeCells.map((row) => row.slice());
-      for (let y = 0; y < cellRows; y += 1) {
-        for (let x = 0; x < cellCols; x += 1) {
-          if (inBuffer(x, y)) continue;
+      const next = lakeMask.map((row) => row.slice());
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          if (inBorderBuffer(x, y)) continue;
           let neighbors = 0;
           for (let oy = -1; oy <= 1; oy += 1) {
             for (let ox = -1; ox <= 1; ox += 1) {
               if (ox === 0 && oy === 0) continue;
               const nx = x + ox;
               const ny = y + oy;
-              if (nx < 0 || nx >= cellCols || ny < 0 || ny >= cellRows) continue;
-              if (lakeCells[ny][nx]) neighbors += 1;
+              if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+              if (lakeMask[ny][nx]) neighbors += 1;
             }
           }
-          if (lakeCells[y][x]) {
+          if (lakeMask[y][x]) {
             if (neighbors <= 2) next[y][x] = false;
           } else if (neighbors >= 5) {
             next[y][x] = true;
           }
         }
       }
-      for (let y = 0; y < cellRows; y += 1) {
-        for (let x = 0; x < cellCols; x += 1) {
-          lakeCells[y][x] = next[y][x];
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          lakeMask[y][x] = next[y][x];
         }
       }
     }
   };
 
-  const addRect = (seedX, seedY, width, height) => {
-    stampRect(seedX, seedY, width, height);
-  };
-
-  const attempts = LAKE_COUNT * 8;
+  const attempts = LAKE_COUNT * 6;
   let placed = 0;
   for (let i = 0; i < attempts; i += 1) {
     if (placed >= LAKE_COUNT) break;
-    const x = Math.floor(Math.random() * cellCols);
-    const y = Math.floor(Math.random() * cellRows);
-    if (isBlockedCell(x, y)) continue;
-    if (inBuffer(x, y)) continue;
-
-    const size = Math.floor(
-      LAKE_MIN_CELLS + Math.random() * (LAKE_MAX_CELLS - LAKE_MIN_CELLS + 1)
-    );
-    if (Math.random() < LAKE_RECT_CHANCE) {
-      const width = Math.max(4, Math.round(Math.sqrt(size) + Math.random() * 4));
-      const height = Math.max(4, Math.round(size / width));
-      addRect(x, y, width, height);
-    } else {
-      addBlob(x, y);
-    }
+    const x = Math.floor(Math.random() * cols);
+    const y = Math.floor(Math.random() * rows);
+    if (inBorderBuffer(x, y)) continue;
+    addBlob(x, y);
     placed += 1;
   }
 
   smoothLakes();
-  removeSmallLakeComponents(lakeCells, cellCols, cellRows);
-  return lakeCells;
+  removeSmallLakeComponents(lakeMask, cols, rows);
+  return lakeMask;
 }
 
-function removeSmallLakeComponents(lakeCells, cellCols, cellRows) {
-  const visited = new Array(cellRows).fill(null).map(() => new Array(cellCols).fill(false));
+function removeSmallLakeComponents(lakeMask, cols, rows) {
+  const visited = new Array(rows).fill(null).map(() => new Array(cols).fill(false));
   const dirs = [
     [1, 0],
     [-1, 0],
@@ -610,9 +592,9 @@ function removeSmallLakeComponents(lakeCells, cellCols, cellRows) {
     [0, -1],
   ];
 
-  for (let y = 0; y < cellRows; y += 1) {
-    for (let x = 0; x < cellCols; x += 1) {
-      if (!lakeCells[y][x] || visited[y][x]) continue;
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (!lakeMask[y][x] || visited[y][x]) continue;
       const stack = [[x, y]];
       const component = [];
       visited[y][x] = true;
@@ -622,38 +604,58 @@ function removeSmallLakeComponents(lakeCells, cellCols, cellRows) {
         for (const [dx, dy] of dirs) {
           const nx = cx + dx;
           const ny = cy + dy;
-          if (nx < 0 || nx >= cellCols || ny < 0 || ny >= cellRows) continue;
-          if (!lakeCells[ny][nx] || visited[ny][nx]) continue;
+          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+          if (!lakeMask[ny][nx] || visited[ny][nx]) continue;
           visited[ny][nx] = true;
           stack.push([nx, ny]);
         }
       }
-      if (component.length < LAKE_MIN_COMPONENT_CELLS) {
+      if (component.length < LAKE_MIN_COMPONENT_TILES) {
         for (const [cx, cy] of component) {
-          lakeCells[cy][cx] = false;
+          lakeMask[cy][cx] = false;
         }
       }
     }
   }
 }
 
-function applyLakes(highGrid, lakeCells) {
-  if (!lakeCells) return;
-  const cellRows = lakeCells.length;
-  const cellCols = lakeCells[0].length;
+function buildLakeBlockMap(lakeMask) {
+  const cellRows = MAZE_CELL_ROWS;
+  const cellCols = MAZE_CELL_COLS;
+  const blocked = new Array(cellRows).fill(null).map(() => new Array(cellCols).fill(false));
 
   for (let y = 0; y < cellRows; y += 1) {
     for (let x = 0; x < cellCols; x += 1) {
-      if (!lakeCells[y][x]) continue;
       const baseY = (y * 2 + 1) * 2;
       const baseX = (x * 2 + 1) * 2;
+      let hasLake = false;
       for (let dy = 0; dy < 2; dy += 1) {
         for (let dx = 0; dx < 2; dx += 1) {
-          if (highGrid[baseY + dy]) {
-            highGrid[baseY + dy][baseX + dx] = WATER;
+          const ty = baseY + dy;
+          const tx = baseX + dx;
+          if (lakeMask[ty] && lakeMask[ty][tx]) {
+            hasLake = true;
+            break;
           }
         }
+        if (hasLake) break;
       }
+      blocked[y][x] = hasLake;
+    }
+  }
+
+  return blocked;
+}
+
+function applyLakes(highGrid, lakeMask) {
+  if (!lakeMask) return;
+  const rows = lakeMask.length;
+  const cols = lakeMask[0].length;
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (!lakeMask[y][x]) continue;
+      highGrid[y][x] = WATER;
     }
   }
 }
