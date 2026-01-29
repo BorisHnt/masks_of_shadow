@@ -13,8 +13,11 @@ const controlsPanel = document.getElementById("controls-panel");
 const closeControls = document.getElementById("close-controls");
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
+const sceneCanvas = document.createElement("canvas");
+const sceneCtx = sceneCanvas.getContext("2d");
 
 ctx.imageSmoothingEnabled = false;
+sceneCtx.imageSmoothingEnabled = false;
 
 const SOURCE_TILE_SIZE = 16;
 const RENDER_SCALE = 2;
@@ -25,6 +28,9 @@ const FLOOR = 0;
 
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
+const FOG_RADIUS_PX = 250;
+const FOG_BLUR_PX = 8;
+const FOG_DARKNESS = 0.62;
 
 function loadImage(path) {
   const image = new Image();
@@ -155,6 +161,11 @@ function setGameState(active) {
   body.classList.toggle("game-active", active);
   splash.setAttribute("aria-hidden", active ? "true" : "false");
   game.setAttribute("aria-hidden", active ? "false" : "true");
+}
+
+function syncSceneSize() {
+  sceneCanvas.width = canvas.width;
+  sceneCanvas.height = canvas.height;
 }
 
 function showLoading(show) {
@@ -479,26 +490,26 @@ function getPlayerFrame() {
 function renderPlayer() {
   const { sprite, frame } = getPlayerFrame();
   if (!sprite || !sprite.image.complete) {
-    ctx.fillStyle = "#d5cdc0";
-    ctx.beginPath();
-    ctx.arc(
+    sceneCtx.fillStyle = "#d5cdc0";
+    sceneCtx.beginPath();
+    sceneCtx.arc(
       player.x * TILE_SIZE - camera.x,
       player.y * TILE_SIZE - camera.y,
       player.radius * TILE_SIZE,
       0,
       Math.PI * 2
     );
-    ctx.fill();
+    sceneCtx.fill();
     return;
   }
 
   const dx = player.x * TILE_SIZE - camera.x - TILE_SIZE / 2;
   const dy = player.y * TILE_SIZE - camera.y - TILE_SIZE / 2;
 
-  ctx.save();
+  sceneCtx.save();
   if (sprite.flip) {
-    ctx.scale(-1, 1);
-    ctx.drawImage(
+    sceneCtx.scale(-1, 1);
+    sceneCtx.drawImage(
       sprite.image,
       frame * SOURCE_TILE_SIZE,
       0,
@@ -510,7 +521,7 @@ function renderPlayer() {
       TILE_SIZE
     );
   } else {
-    ctx.drawImage(
+    sceneCtx.drawImage(
       sprite.image,
       frame * SOURCE_TILE_SIZE,
       0,
@@ -522,13 +533,13 @@ function renderPlayer() {
       TILE_SIZE
     );
   }
-  ctx.restore();
+  sceneCtx.restore();
 }
 
 function renderMaze(grid) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0b0a08";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  sceneCtx.clearRect(0, 0, canvas.width, canvas.height);
+  sceneCtx.fillStyle = "#0b0a08";
+  sceneCtx.fillRect(0, 0, canvas.width, canvas.height);
 
   const cols = grid[0].length;
   const rows = grid.length;
@@ -545,7 +556,7 @@ function renderMaze(grid) {
     rows - 1
   );
 
-  ctx.fillStyle = "#141210";
+  sceneCtx.fillStyle = "#141210";
   for (let y = startRow; y <= endRow; y += 1) {
     for (let x = startCol; x <= endCol; x += 1) {
       if (grid[y][x] !== FLOOR) {
@@ -553,7 +564,7 @@ function renderMaze(grid) {
       }
       const dx = x * TILE_SIZE - camera.x;
       const dy = y * TILE_SIZE - camera.y;
-      ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+      sceneCtx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
     }
   }
 
@@ -569,7 +580,7 @@ function renderMaze(grid) {
       }
       const dx = x * TILE_SIZE - camera.x;
       const dy = y * TILE_SIZE - camera.y;
-      ctx.drawImage(
+      sceneCtx.drawImage(
         wallTilesImage,
         source.x,
         source.y,
@@ -584,6 +595,35 @@ function renderMaze(grid) {
   }
 
   renderPlayer();
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.filter = `blur(${FOG_BLUR_PX}px)`;
+  ctx.drawImage(sceneCanvas, 0, 0);
+  ctx.restore();
+
+  const playerScreenX = player.x * TILE_SIZE - camera.x;
+  const playerScreenY = player.y * TILE_SIZE - camera.y;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(playerScreenX, playerScreenY, FOG_RADIUS_PX, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(sceneCanvas, 0, 0);
+  ctx.restore();
+
+  const gradient = ctx.createRadialGradient(
+    playerScreenX,
+    playerScreenY,
+    FOG_RADIUS_PX * 0.55,
+    playerScreenX,
+    playerScreenY,
+    FOG_RADIUS_PX
+  );
+  gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
+  gradient.addColorStop(1, `rgba(0, 0, 0, ${FOG_DARKNESS})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function gameLoop(timestamp) {
@@ -614,6 +654,7 @@ async function generateAndRenderMaze() {
   if (entry.side === "right") player.direction = "left";
 
   updateCamera();
+  syncSceneSize();
   renderMaze(grid);
   if (!animationId) {
     lastFrameTime = performance.now();
@@ -756,6 +797,7 @@ window.addEventListener("resize", () => {
   if (tutorialActive) {
     positionTutorial(tutorialSteps[tutorialIndex].target);
   }
+  syncSceneSize();
   updateCamera();
   if (currentMaze) {
     renderMaze(currentMaze);
@@ -764,4 +806,5 @@ window.addEventListener("resize", () => {
 
 window.addEventListener("load", () => {
   body.classList.add("is-ready");
+  syncSceneSize();
 });
