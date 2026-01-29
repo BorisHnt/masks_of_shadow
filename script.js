@@ -29,7 +29,7 @@ const FLOOR = 0;
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
 
-const FOG_RADIUS_BASE = 350;
+const FOG_RADIUS_BASE = 300;
 const FOG_RADIUS_MASK = 750;
 const FOG_BLUR_PX = 8;
 const FOG_DARKNESS_BASE = 0.95;
