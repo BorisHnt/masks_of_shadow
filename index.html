@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Masks of Shadow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="splash-active">
+  <div id="app">
+    <section id="splash" class="screen splash" aria-hidden="false">
+      <div class="splash-inner">
+        <p class="splash-veil">Arcade Dungeon Protocol</p>
+        <h1 class="title">Masks of Shadow</h1>
+        <p class="subtitle">Descend into the mineral dark. Wear what the abyss remembers.</p>
+        <button class="btn btn-primary" id="play-btn" type="button">Play</button>
+        <p class="splash-hint">No backend. Interface prototype only.</p>
+      </div>
+    </section>
+
+    <section id="game" class="screen game" aria-hidden="true">
+      <div class="game-shell">
+        <header class="game-topbar">
+          <div class="crest">M</div>
+          <div class="game-title-block">
+            <h2>Shadowscape</h2>
+            <p>Procedural labyrinth harnessing...</p>
+          </div>
+          <div class="topbar-actions">
+            <button class="btn btn-ghost" id="regen-btn" type="button">Regenerate</button>
+          </div>
+        </header>
+
+        <div class="game-layout">
+          <aside class="dashboard" aria-label="Player dashboard">
+            <div class="panel">
+              <h3>Vitality</h3>
+              <div class="health-bar">
+                <span style="width: 68%"></span>
+              </div>
+              <div class="health-meta">
+                <span>68%</span>
+                <span>Mask: Ash</span>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>Active Timers</h3>
+              <ul class="timers">
+                <li><span>Ward cooldown</span><span>00:18</span></li>
+                <li><span>Lantern burn</span><span>02:44</span></li>
+                <li><span>Echo pulse</span><span>00:52</span></li>
+              </ul>
+            </div>
+
+            <div class="panel">
+              <h3>Inventory</h3>
+              <div class="inventory-grid">
+                <span class="slot"></span>
+                <span class="slot"></span>
+                <span class="slot"></span>
+                <span class="slot"></span>
+                <span class="slot"></span>
+                <span class="slot"></span>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>Equipped Mask</h3>
+              <div class="mask-card">
+                <div class="mask-icon">Mask</div>
+                <div>
+                  <p>Obsidian Veil</p>
+                  <span class="muted">Shadow resonance</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>Counters</h3>
+              <div class="counters">
+                <div><span>Relics</span><strong>0</strong></div>
+                <div><span>Shards</span><strong>12</strong></div>
+                <div><span>Keys</span><strong>1</strong></div>
+              </div>
+            </div>
+          </aside>
+
+          <main class="game-center" aria-label="Maze viewport">
+            <div class="maze-frame">
+              <div class="maze-canvas-wrap">
+                <canvas id="game-canvas" width="900" height="560"></canvas>
+                <div class="player-marker" aria-hidden="true"></div>
+              </div>
+            </div>
+            <div class="maze-caption">Canvas placeholder for the labyrinth. Gameplay logic is not implemented.</div>
+          </main>
+
+          <aside class="controls-zone" aria-label="Controls panel">
+            <div class="controls-panel" id="controls-panel" aria-hidden="true">
+              <header>
+                <h3>Controls</h3>
+                <button class="btn btn-ghost" id="close-controls" type="button">Close</button>
+              </header>
+              <ul class="controls-list">
+                <li><span class="keycap">W</span><span>Move north</span></li>
+                <li><span class="keycap">A</span><span>Move west</span></li>
+                <li><span class="keycap">S</span><span>Move south</span></li>
+                <li><span class="keycap">D</span><span>Move east</span></li>
+                <li><span class="keycap">Shift</span><span>Dash</span></li>
+                <li><span class="keycap">Space</span><span>Interact</span></li>
+              </ul>
+              <p class="controls-note">Press Ctrl to toggle this panel.</p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <div class="overlay loading-overlay" id="loading-overlay" aria-hidden="true">
+      <div class="loading-window">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Generating maze...</p>
+      </div>
+    </div>
+
+    <div class="overlay tutorial-overlay" id="tutorial-overlay" aria-hidden="true">
+      <div class="tutorial-bubble" id="tutorial-bubble" data-arrow="down">
+        <p id="tutorial-text"></p>
+        <div class="tutorial-actions">
+          <button class="btn btn-ghost" id="skip-tutorial" type="button">Skip tutorial</button>
+          <button class="btn btn-primary" id="next-tutorial" type="button">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
