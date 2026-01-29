@@ -355,19 +355,6 @@ body.game-active #game {
   aspect-ratio: 1 / 1;
 }
 
-.player-marker {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 16px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--moss-400), var(--moss-500));
-  border: 2px solid rgba(0, 0, 0, 0.4);
-  box-shadow: 0 0 12px rgba(65, 82, 59, 0.8);
-}
-
 .maze-caption {
   font-size: 0.85rem;
   color: var(--text-300);

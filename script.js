@@ -16,9 +16,15 @@ const ctx = canvas.getContext("2d");
 
 ctx.imageSmoothingEnabled = false;
 
-const TILE_SIZE = 16;
+const SOURCE_TILE_SIZE = 16;
+const RENDER_SCALE = 2;
+const TILE_SIZE = SOURCE_TILE_SIZE * RENDER_SCALE;
+
 const WALL = 1;
 const FLOOR = 0;
+
+const MAZE_CELL_COLS = 60;
+const MAZE_CELL_ROWS = 60;
 
 const wallTilesImage = new Image();
 wallTilesImage.src = "assets/walls/Mountains_001_tiles.png";
@@ -48,7 +54,21 @@ let tutorialIndex = 0;
 let tutorialActive = false;
 let generating = false;
 let currentMaze = null;
-let currentOffsets = { x: 0, y: 0 };
+let currentEntry = null;
+let currentExit = null;
+let animationId = null;
+let lastFrameTime = 0;
+
+const camera = { x: 0, y: 0 };
+
+const player = {
+  x: 0,
+  y: 0,
+  radius: 0.32,
+  speed: 4,
+};
+
+const keys = new Set();
 
 const tutorialSteps = [
   {
@@ -56,8 +76,8 @@ const tutorialSteps = [
     text: "Track vitality, timers, and masks here.",
   },
   {
-    target: ".player-marker",
-    text: "Your marker anchors the maze center.",
+    target: "#game-canvas",
+    text: "The maze extends beyond the frame. Move to explore.",
   },
   {
     target: ".controls-zone",
@@ -236,27 +256,33 @@ function upscaleGrid(grid, scale) {
 }
 
 function buildMaze() {
-  const maxCols = Math.floor(canvas.width / TILE_SIZE);
-  const maxRows = Math.floor(canvas.height / TILE_SIZE);
-  const cellCols = Math.max(2, Math.floor((maxCols - 2) / 4));
-  const cellRows = Math.max(2, Math.floor((maxRows - 2) / 4));
-
-  const lowGrid = generateMazePrim(cellCols, cellRows);
-  carveEntrances(lowGrid);
+  const lowGrid = generateMazePrim(MAZE_CELL_COLS, MAZE_CELL_ROWS);
+  const { entry, exit } = carveEntrances(lowGrid);
   const highGrid = upscaleGrid(lowGrid, 2);
 
-  const offsetX = Math.floor(
-    (canvas.width - highGrid[0].length * TILE_SIZE) / 2
-  );
-  const offsetY = Math.floor(
-    (canvas.height - highGrid.length * TILE_SIZE) / 2
-  );
+  const entryHigh = entry
+    ? {
+        x: entry.insideX * 2 + 1,
+        y: entry.insideY * 2 + 1,
+      }
+    : { x: 1, y: 1 };
 
-  return { grid: highGrid, offsetX, offsetY };
+  const exitHigh = exit
+    ? {
+        x: exit.insideX * 2 + 1,
+        y: exit.insideY * 2 + 1,
+      }
+    : { x: highGrid[0].length - 2, y: highGrid.length - 2 };
+
+  return { grid: highGrid, entry: entryHigh, exit: exitHigh };
 }
 
 function isWall(grid, x, y) {
-  return grid[y] && grid[y][x] === WALL;
+  if (!grid) return true;
+  if (y < 0 || y >= grid.length || x < 0 || x >= grid[0].length) {
+    return true;
+  }
+  return grid[y][x] === WALL;
 }
 
 function selectWallTile(x, y, grid = currentMaze) {
@@ -310,29 +336,125 @@ function selectWallTile(x, y, grid = currentMaze) {
   return 0;
 }
 
-function renderMaze(grid, offsetX, offsetY) {
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function updateCamera() {
+  if (!currentMaze) return;
+  const worldWidth = currentMaze[0].length * TILE_SIZE;
+  const worldHeight = currentMaze.length * TILE_SIZE;
+  camera.x = player.x * TILE_SIZE - canvas.width / 2;
+  camera.y = player.y * TILE_SIZE - canvas.height / 2;
+  camera.x = clamp(camera.x, 0, Math.max(0, worldWidth - canvas.width));
+  camera.y = clamp(camera.y, 0, Math.max(0, worldHeight - canvas.height));
+}
+
+function canMoveTo(x, y) {
+  if (!currentMaze) return false;
+  const r = player.radius;
+  const minX = Math.floor(x - r);
+  const maxX = Math.floor(x + r);
+  const minY = Math.floor(y - r);
+  const maxY = Math.floor(y + r);
+
+  for (let ty = minY; ty <= maxY; ty += 1) {
+    for (let tx = minX; tx <= maxX; tx += 1) {
+      if (isWall(currentMaze, tx, ty)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function movePlayer(dx, dy, delta) {
+  if (!currentMaze) return;
+  const step = player.speed * delta;
+
+  if (dx !== 0) {
+    const nextX = player.x + dx * step;
+    if (canMoveTo(nextX, player.y)) {
+      player.x = nextX;
+    }
+  }
+
+  if (dy !== 0) {
+    const nextY = player.y + dy * step;
+    if (canMoveTo(player.x, nextY)) {
+      player.y = nextY;
+    }
+  }
+}
+
+function updatePlayer(delta) {
+  let dx = 0;
+  let dy = 0;
+
+  if (keys.has("w") || keys.has("arrowup")) dy -= 1;
+  if (keys.has("s") || keys.has("arrowdown")) dy += 1;
+  if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
+  if (keys.has("d") || keys.has("arrowright")) dx += 1;
+
+  if (dx !== 0 && dy !== 0) {
+    movePlayer(dx, 0, delta);
+    movePlayer(0, dy, delta);
+  } else {
+    movePlayer(dx, dy, delta);
+  }
+}
+
+function renderMaze(grid) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#0b0a08";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  for (let y = 0; y < grid.length; y += 1) {
-    for (let x = 0; x < grid[0].length; x += 1) {
+  const cols = grid[0].length;
+  const rows = grid.length;
+  const startCol = clamp(Math.floor(camera.x / TILE_SIZE), 0, cols - 1);
+  const endCol = clamp(
+    Math.ceil((camera.x + canvas.width) / TILE_SIZE),
+    0,
+    cols - 1
+  );
+  const startRow = clamp(Math.floor(camera.y / TILE_SIZE), 0, rows - 1);
+  const endRow = clamp(
+    Math.ceil((camera.y + canvas.height) / TILE_SIZE),
+    0,
+    rows - 1
+  );
+
+  ctx.fillStyle = "#141210";
+  for (let y = startRow; y <= endRow; y += 1) {
+    for (let x = startCol; x <= endCol; x += 1) {
+      if (grid[y][x] !== FLOOR) {
+        continue;
+      }
+      const dx = x * TILE_SIZE - camera.x;
+      const dy = y * TILE_SIZE - camera.y;
+      ctx.fillRect(dx, dy, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  for (let y = startRow; y <= endRow; y += 1) {
+    for (let x = startCol; x <= endCol; x += 1) {
       if (grid[y][x] !== WALL) {
         continue;
       }
       const tileIndex = selectWallTile(x, y, grid);
       const source = WALL_TILE_SOURCES[tileIndex];
-      if (!source) {
+      if (!source || !wallTilesImage.complete) {
         continue;
       }
-      const dx = offsetX + x * TILE_SIZE;
-      const dy = offsetY + y * TILE_SIZE;
+      const dx = x * TILE_SIZE - camera.x;
+      const dy = y * TILE_SIZE - camera.y;
       ctx.drawImage(
         wallTilesImage,
         source.x,
         source.y,
-        TILE_SIZE,
-        TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
         dx,
         dy,
         TILE_SIZE,
@@ -340,14 +462,44 @@ function renderMaze(grid, offsetX, offsetY) {
       );
     }
   }
+
+  ctx.fillStyle = "#d5cdc0";
+  ctx.beginPath();
+  ctx.arc(
+    player.x * TILE_SIZE - camera.x,
+    player.y * TILE_SIZE - camera.y,
+    player.radius * TILE_SIZE,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+}
+
+function gameLoop(timestamp) {
+  const delta = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0);
+  lastFrameTime = timestamp;
+  updatePlayer(delta);
+  updateCamera();
+  if (currentMaze) {
+    renderMaze(currentMaze);
+  }
+  animationId = window.requestAnimationFrame(gameLoop);
 }
 
 async function generateAndRenderMaze() {
   await wallTilesReady;
-  const { grid, offsetX, offsetY } = buildMaze();
+  const { grid, entry, exit } = buildMaze();
   currentMaze = grid;
-  currentOffsets = { x: offsetX, y: offsetY };
-  renderMaze(grid, offsetX, offsetY);
+  currentEntry = entry;
+  currentExit = exit;
+  player.x = entry.x + 0.5;
+  player.y = entry.y + 0.5;
+  updateCamera();
+  renderMaze(grid);
+  if (!animationId) {
+    lastFrameTime = performance.now();
+    animationId = window.requestAnimationFrame(gameLoop);
+  }
 }
 
 function simulateGeneration() {
@@ -455,24 +607,28 @@ closeControls.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Control" && !event.repeat) {
+  const key = event.key.toLowerCase();
+  if (key === "control" && !event.repeat) {
     setControlsOpen(!controlsOpen);
+    return;
   }
+  if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+    keys.add(key);
+  }
+});
+
+document.addEventListener("keyup", (event) => {
+  const key = event.key.toLowerCase();
+  keys.delete(key);
 });
 
 window.addEventListener("resize", () => {
   if (tutorialActive) {
     positionTutorial(tutorialSteps[tutorialIndex].target);
   }
+  updateCamera();
   if (currentMaze) {
-    const offsetX = Math.floor(
-      (canvas.width - currentMaze[0].length * TILE_SIZE) / 2
-    );
-    const offsetY = Math.floor(
-      (canvas.height - currentMaze.length * TILE_SIZE) / 2
-    );
-    currentOffsets = { x: offsetX, y: offsetY };
-    renderMaze(currentMaze, offsetX, offsetY);
+    renderMaze(currentMaze);
   }
 });
 
