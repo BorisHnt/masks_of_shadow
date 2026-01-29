@@ -1024,6 +1024,8 @@ function updateCamera() {
   camera.y = player.y * TILE_SIZE - canvas.height / 2;
   camera.x = clamp(camera.x, 0, Math.max(0, worldWidth - canvas.width));
   camera.y = clamp(camera.y, 0, Math.max(0, worldHeight - canvas.height));
+  camera.x = Math.round(camera.x);
+  camera.y = Math.round(camera.y);
 }
 
 function canMoveEntity(x, y, radius) {
