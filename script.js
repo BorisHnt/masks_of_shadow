@@ -55,7 +55,7 @@ const SKELETON_CONTACT_DPS = 15;
 const SKELETON_CONTACT_COOLDOWN = 0.35;
 const SKELETON_PATH_INTERVAL = 0.5;
 const SKELETON_PATH_RADIUS = 22;
-const SKELETON_WALL_BUFFER = 1;
+const SKELETON_WALL_BUFFER = 0;
 const SKELETON_LOS_STEP = 0.25;
 
 const FOG_SPRING_STIFFNESS = 40;
@@ -858,13 +858,20 @@ function updateSkeletons(delta) {
       skeleton.pathTimer -= delta;
       if (skeleton.pathTimer <= 0) {
         skeleton.pathTimer = SKELETON_PATH_INTERVAL;
-        const dir = findPathDirection(
+        let dir = findPathDirection(
           Math.floor(skeleton.x),
           Math.floor(skeleton.y),
           Math.floor(player.x),
           Math.floor(player.y),
           SKELETON_PATH_RADIUS
         );
+        if (dir.x === 0 && dir.y === 0) {
+          if (Math.abs(toPlayerX) > Math.abs(toPlayerY)) {
+            dir = { x: Math.sign(toPlayerX), y: 0 };
+          } else {
+            dir = { x: 0, y: Math.sign(toPlayerY) };
+          }
+        }
         skeleton.wanderDir = dir;
       }
       dx = skeleton.wanderDir.x;
