@@ -40,6 +40,9 @@ const MASK_DURATION = 15;
 const MASK_ITEM_COUNT = 10;
 const MASK_ITEM_RADIUS = 0.35;
 
+const FOG_SPRING_STIFFNESS = 40;
+const FOG_SPRING_DAMPING = 8;
+
 function loadImage(path) {
   const image = new Image();
   const ready = new Promise((resolve) => {
@@ -47,6 +50,24 @@ function loadImage(path) {
     image.onerror = () => resolve(false);
   });
   image.src = path;
+  return { image, ready };
+}
+
+function loadImageWithFallback(primary, fallback) {
+  const image = new Image();
+  let triedFallback = false;
+  const ready = new Promise((resolve) => {
+    image.onload = () => resolve(true);
+    image.onerror = () => {
+      if (fallback && !triedFallback) {
+        triedFallback = true;
+        image.src = fallback;
+      } else {
+        resolve(false);
+      }
+    };
+  });
+  image.src = primary;
   return { image, ready };
 }
 
@@ -60,10 +81,21 @@ const characterImages = {
 };
 
 const yellowCharacterImages = {
-  down: loadImage("assets/characters/human_001_face_yellow_mask_sheet.png"),
-  up: loadImage("assets/characters/human_001_back_yellow_mask_sheet.png"),
-  side: loadImage("assets/characters/human_001_side_yellow_mask_sheet.png"),
+  down: loadImageWithFallback(
+    "assets/characters/human_001_face_yellow_mask.png",
+    "assets/characters/human_001_face_yellow_mask_sheet.png"
+  ),
+  up: loadImageWithFallback(
+    "assets/characters/human_001_back_yellow_mask.png",
+    "assets/characters/human_001_back_yellow_mask_sheet.png"
+  ),
+  side: loadImageWithFallback(
+    "assets/characters/human_001_side_yellow_mask.png",
+    "assets/characters/human_001_side_yellow_mask_sheet.png"
+  ),
 };
+
+const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
 
 const assetsReady = Promise.all([
   wallTiles.ready,
@@ -73,6 +105,7 @@ const assetsReady = Promise.all([
   yellowCharacterImages.down.ready,
   yellowCharacterImages.up.ready,
   yellowCharacterImages.side.ready,
+  yellowMaskItem.ready,
 ]);
 
 const WALL_TILE_SOURCES = [
@@ -134,6 +167,10 @@ let animationId = null;
 let lastFrameTime = 0;
 let maskItems = [];
 let yellowMaskTimer = 0;
+let fogRadiusCurrent = FOG_RADIUS_BASE;
+let fogRadiusVelocity = 0;
+let fogDarknessCurrent = FOG_DARKNESS_BASE;
+let fogDarknessVelocity = 0;
 
 const camera = { x: 0, y: 0 };
 
@@ -562,6 +599,42 @@ function checkMaskPickup() {
   }
 }
 
+function applySpring(current, velocity, target, delta, stiffness, damping) {
+  const accel = (target - current) * stiffness;
+  const damp = Math.exp(-damping * delta);
+  const nextVelocity = (velocity + accel * delta) * damp;
+  const nextValue = current + nextVelocity * delta;
+  return { value: nextValue, velocity: nextVelocity };
+}
+
+function updateFog(delta) {
+  const targetRadius = yellowMaskTimer > 0 ? FOG_RADIUS_MASK : FOG_RADIUS_BASE;
+  const targetDarkness =
+    yellowMaskTimer > 0 ? FOG_DARKNESS_MASK : FOG_DARKNESS_BASE;
+
+  const radiusSpring = applySpring(
+    fogRadiusCurrent,
+    fogRadiusVelocity,
+    targetRadius,
+    delta,
+    FOG_SPRING_STIFFNESS,
+    FOG_SPRING_DAMPING
+  );
+  fogRadiusCurrent = clamp(radiusSpring.value, 0, FOG_RADIUS_MASK * 1.2);
+  fogRadiusVelocity = radiusSpring.velocity;
+
+  const darknessSpring = applySpring(
+    fogDarknessCurrent,
+    fogDarknessVelocity,
+    targetDarkness,
+    delta,
+    FOG_SPRING_STIFFNESS,
+    FOG_SPRING_DAMPING
+  );
+  fogDarknessCurrent = clamp(darknessSpring.value, 0, 1);
+  fogDarknessVelocity = darknessSpring.velocity;
+}
+
 function getPlayerFrame() {
   const activeSprites = yellowMaskTimer > 0 ? playerYellowSprites : playerSprites;
   const sprite = activeSprites[player.direction] || activeSprites.down;
@@ -650,6 +723,20 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
     sceneCtx.beginPath();
     sceneCtx.arc(cx, cy, radius, 0, Math.PI * 2);
     sceneCtx.stroke();
+
+    if (yellowMaskItem.image.complete) {
+      sceneCtx.drawImage(
+        yellowMaskItem.image,
+        0,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        cx - TILE_SIZE / 2,
+        cy - TILE_SIZE / 2,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
   }
 }
 
@@ -725,9 +812,8 @@ function renderMaze(grid) {
 
   ctx.save();
   ctx.beginPath();
-  const fogRadius = yellowMaskTimer > 0 ? FOG_RADIUS_MASK : FOG_RADIUS_BASE;
-  const fogDarkness =
-    yellowMaskTimer > 0 ? FOG_DARKNESS_MASK : FOG_DARKNESS_BASE;
+  const fogRadius = fogRadiusCurrent;
+  const fogDarkness = fogDarknessCurrent;
 
   ctx.arc(playerScreenX, playerScreenY, fogRadius, 0, Math.PI * 2);
   ctx.clip();
@@ -754,6 +840,7 @@ function gameLoop(timestamp) {
   updatePlayer(delta);
   checkMaskPickup();
   updateMaskTimer(delta);
+  updateFog(delta);
   updateCamera();
   if (currentMaze) {
     renderMaze(currentMaze);
@@ -769,6 +856,10 @@ async function generateAndRenderMaze() {
   currentExit = exit;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   yellowMaskTimer = 0;
+  fogRadiusCurrent = FOG_RADIUS_BASE;
+  fogRadiusVelocity = 0;
+  fogDarknessCurrent = FOG_DARKNESS_BASE;
+  fogDarknessVelocity = 0;
   player.x = entry.x + 0.5;
   player.y = entry.y + 0.5;
   player.moving = false;
