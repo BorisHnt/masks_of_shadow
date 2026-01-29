@@ -46,9 +46,9 @@ const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
-const LAKE_COUNT = 4;
-const LAKE_MIN_CELLS = 24;
-const LAKE_MAX_CELLS = 60;
+const LAKE_COUNT = 2;
+const LAKE_MIN_CELLS = 80;
+const LAKE_MAX_CELLS = 180;
 const LAKE_RECT_CHANCE = 0.35;
 const LAKE_ENTRY_BUFFER = 3;
 const KNIFE_COOLDOWN = 0.5;
@@ -229,6 +229,8 @@ let contactCooldown = 0;
 let knives = [];
 let knifeCooldown = 0;
 let lastArrowDir = { x: 0, y: -1 };
+let commandBuffer = "";
+let commandBufferTimer = 0;
 
 const camera = { x: 0, y: 0 };
 
@@ -1564,6 +1566,83 @@ function renderMaze(grid) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+function renderFullMapToCanvas(grid) {
+  const cols = grid[0].length;
+  const rows = grid.length;
+  const mapCanvas = document.createElement("canvas");
+  mapCanvas.width = cols * TILE_SIZE;
+  mapCanvas.height = rows * TILE_SIZE;
+  const mapCtx = mapCanvas.getContext("2d");
+  mapCtx.imageSmoothingEnabled = false;
+
+  mapCtx.fillStyle = "#0b0a08";
+  mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+  mapCtx.fillStyle = "#141210";
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (grid[y][x] !== FLOOR) continue;
+      mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  if (lakeTilesImage.complete) {
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        if (grid[y][x] !== WATER) continue;
+        const tileIndex = selectLakeTile(x, y, grid);
+        const source = LAKE_TILE_SOURCES[tileIndex];
+        if (!source) continue;
+        mapCtx.drawImage(
+          lakeTilesImage,
+          source.x,
+          source.y,
+          SOURCE_TILE_SIZE,
+          SOURCE_TILE_SIZE,
+          x * TILE_SIZE,
+          y * TILE_SIZE,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      }
+    }
+  }
+
+  if (wallTilesImage.complete) {
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        if (grid[y][x] !== WALL) continue;
+        const tileIndex = selectWallTile(x, y, grid);
+        const source = WALL_TILE_SOURCES[tileIndex];
+        if (!source) continue;
+        mapCtx.drawImage(
+          wallTilesImage,
+          source.x,
+          source.y,
+          SOURCE_TILE_SIZE,
+          SOURCE_TILE_SIZE,
+          x * TILE_SIZE,
+          y * TILE_SIZE,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      }
+    }
+  }
+
+  return mapCanvas;
+}
+
+async function exportMapPng() {
+  if (!currentMaze) return;
+  await assetsReady;
+  const mapCanvas = renderFullMapToCanvas(currentMaze);
+  const link = document.createElement("a");
+  link.download = `masks_of_shadow_map_${Date.now()}.png`;
+  link.href = mapCanvas.toDataURL("image/png");
+  link.click();
+}
+
 function gameLoop(timestamp) {
   const delta = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
@@ -1577,6 +1656,12 @@ function gameLoop(timestamp) {
   updateEventsUI();
   updateHealthUI();
   updateCamera();
+  if (commandBufferTimer > 0) {
+    commandBufferTimer = Math.max(0, commandBufferTimer - delta);
+    if (commandBufferTimer === 0) {
+      commandBuffer = "";
+    }
+  }
   if (currentMaze) {
     renderMaze(currentMaze);
   }
@@ -1729,6 +1814,15 @@ document.addEventListener("keydown", (event) => {
   if (key === "control" && !event.repeat) {
     setControlsOpen(!controlsOpen);
     return;
+  }
+  if (key.length === 1 && key >= "a" && key <= "z") {
+    commandBuffer += key;
+    commandBufferTimer = 1.2;
+    if (commandBuffer.endsWith("mapscreen")) {
+      commandBuffer = "";
+      exportMapPng();
+      return;
+    }
   }
   if (key === "k" && !event.repeat) {
     spawnKnife();
