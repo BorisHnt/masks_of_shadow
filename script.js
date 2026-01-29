@@ -53,6 +53,9 @@ const SKELETON_CHASE_RANGE = 9;
 const SKELETON_WANDER_TIME = 1.6;
 const SKELETON_CONTACT_DPS = 12;
 const SKELETON_CONTACT_COOLDOWN = 0.35;
+const SKELETON_PATH_INTERVAL = 0.5;
+const SKELETON_PATH_RADIUS = 22;
+const SKELETON_WALL_BUFFER = 1;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -496,6 +499,7 @@ function spawnSkeletons(grid, entry, exit, count) {
     animTime: 0,
     wanderTimer: Math.random() * SKELETON_WANDER_TIME,
     wanderDir: { x: 0, y: 0 },
+    pathTimer: Math.random() * SKELETON_PATH_INTERVAL,
   }));
 }
 
@@ -741,6 +745,80 @@ function updateFog(delta) {
   fogDarknessVelocity = darknessSpring.velocity;
 }
 
+function isWalkableCell(x, y, buffer) {
+  if (isWall(currentMaze, x, y)) return false;
+  if (buffer <= 0) return true;
+  for (let oy = -buffer; oy <= buffer; oy += 1) {
+    for (let ox = -buffer; ox <= buffer; ox += 1) {
+      if (isWall(currentMaze, x + ox, y + oy)) return false;
+    }
+  }
+  return true;
+}
+
+function findPathDirection(startX, startY, goalX, goalY, radius) {
+  if (!currentMaze) return { x: 0, y: 0 };
+  const rows = currentMaze.length;
+  const cols = currentMaze[0].length;
+  const sx = clamp(startX, 0, cols - 1);
+  const sy = clamp(startY, 0, rows - 1);
+  const gx = clamp(goalX, 0, cols - 1);
+  const gy = clamp(goalY, 0, rows - 1);
+
+  if (sx === gx && sy === gy) return { x: 0, y: 0 };
+
+  const minX = clamp(sx - radius, 0, cols - 1);
+  const maxX = clamp(sx + radius, 0, cols - 1);
+  const minY = clamp(sy - radius, 0, rows - 1);
+  const maxY = clamp(sy + radius, 0, rows - 1);
+
+  const queue = [];
+  const cameFrom = new Map();
+  const key = (x, y) => `${x},${y}`;
+
+  queue.push([sx, sy]);
+  cameFrom.set(key(sx, sy), null);
+
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  while (queue.length) {
+    const [cx, cy] = queue.shift();
+    if (cx === gx && cy === gy) break;
+
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue;
+      if (!isWalkableCell(nx, ny, SKELETON_WALL_BUFFER)) continue;
+      const nk = key(nx, ny);
+      if (cameFrom.has(nk)) continue;
+      cameFrom.set(nk, [cx, cy]);
+      queue.push([nx, ny]);
+    }
+  }
+
+  const goalKey = key(gx, gy);
+  if (!cameFrom.has(goalKey)) {
+    return { x: 0, y: 0 };
+  }
+
+  let step = [gx, gy];
+  let prev = cameFrom.get(goalKey);
+  while (prev && !(prev[0] === sx && prev[1] === sy)) {
+    step = prev;
+    prev = cameFrom.get(key(prev[0], prev[1]));
+  }
+
+  const dirX = step[0] - sx;
+  const dirY = step[1] - sy;
+  return { x: Math.sign(dirX), y: Math.sign(dirY) };
+}
+
 function updateSkeletons(delta) {
   if (!skeletons.length) return;
 
@@ -754,9 +832,20 @@ function updateSkeletons(delta) {
     let dy = 0;
 
     if (distSq < chaseRangeSq) {
-      const dist = Math.sqrt(distSq) || 1;
-      dx = toPlayerX / dist;
-      dy = toPlayerY / dist;
+      skeleton.pathTimer -= delta;
+      if (skeleton.pathTimer <= 0) {
+        skeleton.pathTimer = SKELETON_PATH_INTERVAL;
+        const dir = findPathDirection(
+          Math.floor(skeleton.x),
+          Math.floor(skeleton.y),
+          Math.floor(player.x),
+          Math.floor(player.y),
+          SKELETON_PATH_RADIUS
+        );
+        skeleton.wanderDir = dir;
+      }
+      dx = skeleton.wanderDir.x;
+      dy = skeleton.wanderDir.y;
     } else {
       skeleton.wanderTimer -= delta;
       if (skeleton.wanderTimer <= 0) {
