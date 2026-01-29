@@ -52,7 +52,8 @@ const LAKE_STAMPS_MAX = 14;
 const LAKE_ENTRY_BUFFER = 6;
 const LAKE_SMOOTH_PASSES = 1;
 const LAKE_MIN_COMPONENT_TILES = 120;
-const LAKE_BLOCK_BUFFER = 1;
+const LAKE_BLOCK_BUFFER = 0;
+const LAKE_EDGE_OPEN_CHANCE = 0.6;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -472,6 +473,7 @@ function buildMaze() {
   const { entry, exit } = carveEntrances(lowGrid);
   const highGrid = upscaleGrid(lowGrid, 2);
   applyLakes(highGrid, lakeMask);
+  softenLakeEdges(highGrid);
 
   const entryHigh = entry
     ? {
@@ -684,6 +686,25 @@ function applyLakes(highGrid, lakeMask) {
     for (let x = 0; x < cols; x += 1) {
       if (!lakeMask[y][x]) continue;
       highGrid[y][x] = WATER;
+    }
+  }
+}
+
+function softenLakeEdges(highGrid) {
+  const rows = highGrid.length;
+  const cols = highGrid[0].length;
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (highGrid[y][x] !== WALL) continue;
+      const hasWater =
+        highGrid[y - 1][x] === WATER ||
+        highGrid[y + 1][x] === WATER ||
+        highGrid[y][x - 1] === WATER ||
+        highGrid[y][x + 1] === WATER;
+      if (!hasWater) continue;
+      if (Math.random() < LAKE_EDGE_OPEN_CHANCE) {
+        highGrid[y][x] = FLOOR;
+      }
     }
   }
 }
