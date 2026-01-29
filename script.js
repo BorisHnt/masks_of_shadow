@@ -47,15 +47,16 @@ const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
 
 const SKELETON_COUNT = 6;
-const SKELETON_SPEED = 2.2;
+const SKELETON_SPEED = 4;
 const SKELETON_RADIUS = 0.32;
 const SKELETON_CHASE_RANGE = 9;
 const SKELETON_WANDER_TIME = 1.6;
-const SKELETON_CONTACT_DPS = 12;
+const SKELETON_CONTACT_DPS = 15;
 const SKELETON_CONTACT_COOLDOWN = 0.35;
 const SKELETON_PATH_INTERVAL = 0.5;
 const SKELETON_PATH_RADIUS = 22;
 const SKELETON_WALL_BUFFER = 1;
+const SKELETON_LOS_STEP = 0.25;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -756,6 +757,28 @@ function isWalkableCell(x, y, buffer) {
   return true;
 }
 
+function hasLineOfSight(ax, ay, bx, by) {
+  if (!currentMaze) return false;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) return true;
+  const steps = Math.ceil(dist / SKELETON_LOS_STEP);
+  const stepX = dx / steps;
+  const stepY = dy / steps;
+
+  let x = ax;
+  let y = ay;
+  for (let i = 0; i <= steps; i += 1) {
+    if (isWall(currentMaze, Math.floor(x), Math.floor(y))) {
+      return false;
+    }
+    x += stepX;
+    y += stepY;
+  }
+  return true;
+}
+
 function findPathDirection(startX, startY, goalX, goalY, radius) {
   if (!currentMaze) return { x: 0, y: 0 };
   const rows = currentMaze.length;
@@ -831,7 +854,7 @@ function updateSkeletons(delta) {
     let dx = 0;
     let dy = 0;
 
-    if (distSq < chaseRangeSq) {
+    if (distSq < chaseRangeSq && hasLineOfSight(skeleton.x, skeleton.y, player.x, player.y)) {
       skeleton.pathTimer -= delta;
       if (skeleton.pathTimer <= 0) {
         skeleton.pathTimer = SKELETON_PATH_INTERVAL;
