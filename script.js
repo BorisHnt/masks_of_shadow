@@ -52,6 +52,7 @@ const LAKE_STAMPS_MAX = 14;
 const LAKE_ENTRY_BUFFER = 6;
 const LAKE_SMOOTH_PASSES = 1;
 const LAKE_MIN_COMPONENT_TILES = 120;
+const LAKE_BLOCK_BUFFER = 1;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -579,8 +580,35 @@ function generateLakeMask(cols, rows) {
   }
 
   smoothLakes();
+  enforceEvenLakeMask(lakeMask, cols, rows);
   removeSmallLakeComponents(lakeMask, cols, rows);
   return lakeMask;
+}
+
+function enforceEvenLakeMask(lakeMask, cols, rows) {
+  for (let y = 0; y < rows; y += 2) {
+    for (let x = 0; x < cols; x += 2) {
+      let hasLake = false;
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          if (lakeMask[y + dy] && lakeMask[y + dy][x + dx]) {
+            hasLake = true;
+            break;
+          }
+        }
+        if (hasLake) break;
+      }
+      if (hasLake) {
+        for (let dy = 0; dy < 2; dy += 1) {
+          for (let dx = 0; dx < 2; dx += 1) {
+            if (lakeMask[y + dy]) {
+              lakeMask[y + dy][x + dx] = true;
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 function removeSmallLakeComponents(lakeMask, cols, rows) {
@@ -629,8 +657,8 @@ function buildLakeBlockMap(lakeMask) {
       const baseY = (y * 2 + 1) * 2;
       const baseX = (x * 2 + 1) * 2;
       let hasLake = false;
-      for (let dy = 0; dy < 2; dy += 1) {
-        for (let dx = 0; dx < 2; dx += 1) {
+      for (let dy = -LAKE_BLOCK_BUFFER; dy < 2 + LAKE_BLOCK_BUFFER; dy += 1) {
+        for (let dx = -LAKE_BLOCK_BUFFER; dx < 2 + LAKE_BLOCK_BUFFER; dx += 1) {
           const ty = baseY + dy;
           const tx = baseX + dx;
           if (lakeMask[ty] && lakeMask[ty][tx]) {
