@@ -65,6 +65,8 @@ const SKELETON_ENTRY_MIN_DIST = 6;
 const SKELETON_EXIT_MIN_DIST = 8;
 const SKELETON_NEAR_MAX_DIST = 18;
 const SKELETON_NEAR_COUNT = 12;
+const SKELETON_DEATH_FRAMES = 4;
+const SKELETON_DEATH_FPS = 8;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -129,6 +131,7 @@ const skeletonImages = {
   up: loadImage("assets/characters/skeleton_001_back.png"),
   side: loadImage("assets/characters/skeleton_001_side.png"),
 };
+const skeletonDeathImage = loadImage("assets/characters/skeleton_001_death.png");
 
 const assetsReady = Promise.all([
   wallTiles.ready,
@@ -143,6 +146,7 @@ const assetsReady = Promise.all([
   skeletonImages.down.ready,
   skeletonImages.up.ready,
   skeletonImages.side.ready,
+  skeletonDeathImage.ready,
 ]);
 
 const WALL_TILE_SOURCES = [
@@ -532,6 +536,8 @@ function spawnSkeletons(grid, entry, exit, count) {
     radius: SKELETON_RADIUS,
     speed: SKELETON_SPEED,
     health: SKELETON_MAX_HEALTH,
+    dead: false,
+    deathTime: 0,
     direction: "down",
     moving: false,
     animTime: 0,
@@ -750,19 +756,21 @@ function updateKnives(delta) {
     for (const knife of knives) {
       if (knife.traveled > KNIFE_RANGE_TILES) continue;
       for (const skeleton of skeletons) {
+        if (skeleton.dead) continue;
         const dx = skeleton.x - knife.x;
         const dy = skeleton.y - knife.y;
         if (dx * dx + dy * dy <= hitRadiusSq) {
           skeleton.health -= 1;
           if (skeleton.health <= 0) {
-            skeleton._dead = true;
+            skeleton.dead = true;
+            skeleton.deathTime = 0;
+            skeleton.moving = false;
           }
           knife.traveled = KNIFE_RANGE_TILES + 1;
           break;
         }
       }
     }
-    skeletons = skeletons.filter((skeleton) => !skeleton._dead);
   }
 
   knives = knives.filter((knife) => knife.traveled <= KNIFE_RANGE_TILES);
@@ -777,6 +785,7 @@ function applySkeletonContact(delta) {
   const hitRadiusSq = hitRadius * hitRadius;
 
   for (const skeleton of skeletons) {
+    if (skeleton.dead) continue;
     const dx = player.x - skeleton.x;
     const dy = player.y - skeleton.y;
     if (dx * dx + dy * dy <= hitRadiusSq) {
@@ -944,6 +953,10 @@ function updateSkeletons(delta) {
   if (!skeletons.length) return;
 
   for (const skeleton of skeletons) {
+    if (skeleton.dead) {
+      skeleton.deathTime += delta;
+      continue;
+    }
     const toPlayerX = player.x - skeleton.x;
     const toPlayerY = player.y - skeleton.y;
     const distSq = toPlayerX * toPlayerX + toPlayerY * toPlayerY;
@@ -1008,6 +1021,12 @@ function updateSkeletons(delta) {
       moveEntity(skeleton, dx, dy, delta);
     }
   }
+
+  skeletons = skeletons.filter(
+    (skeleton) =>
+      !skeleton.dead ||
+      skeleton.deathTime < SKELETON_DEATH_FRAMES / SKELETON_DEATH_FPS
+  );
 }
 
 function getPlayerFrame() {
@@ -1083,6 +1102,29 @@ function renderSkeletons(startCol, endCol, startRow, endRow) {
     if (sx < startCol - 2 || sx > endCol + 2) continue;
     if (sy < startRow - 2 || sy > endRow + 2) continue;
 
+    const dx = skeleton.x * TILE_SIZE - camera.x - TILE_SIZE / 2;
+    const dy = skeleton.y * TILE_SIZE - camera.y - TILE_SIZE / 2;
+
+    if (skeleton.dead) {
+      if (!skeletonDeathImage.image.complete) continue;
+      const frame = Math.min(
+        SKELETON_DEATH_FRAMES - 1,
+        Math.floor(skeleton.deathTime * SKELETON_DEATH_FPS)
+      );
+      sceneCtx.drawImage(
+        skeletonDeathImage.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+      continue;
+    }
+
     const { sprite, frame } = getSkeletonFrame(skeleton);
     if (!sprite || !sprite.image.complete) {
       sceneCtx.fillStyle = "#bdb3a3";
@@ -1097,9 +1139,6 @@ function renderSkeletons(startCol, endCol, startRow, endRow) {
       sceneCtx.fill();
       continue;
     }
-
-    const dx = skeleton.x * TILE_SIZE - camera.x - TILE_SIZE / 2;
-    const dy = skeleton.y * TILE_SIZE - camera.y - TILE_SIZE / 2;
 
     sceneCtx.save();
     if (sprite.flip) {
