@@ -28,10 +28,17 @@ const FLOOR = 0;
 
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
-const FOG_RADIUS_PX = 250;
+
+const FOG_RADIUS_BASE = 250;
+const FOG_RADIUS_MASK = 750;
 const FOG_BLUR_PX = 8;
-const FOG_DARKNESS = 0.95;
-const FOG_FALLOFF_PX = 100;
+const FOG_DARKNESS_BASE = 0.95;
+const FOG_DARKNESS_MASK = 0.75;
+const FOG_FALLOFF_PX = 50;
+
+const MASK_DURATION = 15;
+const MASK_ITEM_COUNT = 10;
+const MASK_ITEM_RADIUS = 0.35;
 
 function loadImage(path) {
   const image = new Image();
@@ -52,11 +59,20 @@ const characterImages = {
   side: loadImage("assets/characters/human_001_side.png"),
 };
 
+const yellowCharacterImages = {
+  down: loadImage("assets/characters/human_001_face_yellow_mask_sheet.png"),
+  up: loadImage("assets/characters/human_001_back_yellow_mask_sheet.png"),
+  side: loadImage("assets/characters/human_001_side_yellow_mask_sheet.png"),
+};
+
 const assetsReady = Promise.all([
   wallTiles.ready,
   characterImages.down.ready,
   characterImages.up.ready,
   characterImages.side.ready,
+  yellowCharacterImages.down.ready,
+  yellowCharacterImages.up.ready,
+  yellowCharacterImages.side.ready,
 ]);
 
 const WALL_TILE_SOURCES = [
@@ -75,32 +91,37 @@ const WALL_TILE_SOURCES = [
   { x: 0, y: 48 },
 ];
 
-const playerSprites = {
-  down: {
-    image: characterImages.down.image,
-    idleFrame: 2,
-    moveFrames: [0, 1],
-    flip: false,
-  },
-  up: {
-    image: characterImages.up.image,
-    idleFrame: 2,
-    moveFrames: [0, 1],
-    flip: false,
-  },
-  right: {
-    image: characterImages.side.image,
-    idleFrame: 0,
-    moveFrames: [0, 1],
-    flip: false,
-  },
-  left: {
-    image: characterImages.side.image,
-    idleFrame: 0,
-    moveFrames: [0, 1],
-    flip: true,
-  },
-};
+function buildPlayerSprites(imageSet) {
+  return {
+    down: {
+      image: imageSet.down.image,
+      idleFrame: 2,
+      moveFrames: [0, 1],
+      flip: false,
+    },
+    up: {
+      image: imageSet.up.image,
+      idleFrame: 2,
+      moveFrames: [0, 1],
+      flip: false,
+    },
+    right: {
+      image: imageSet.side.image,
+      idleFrame: 0,
+      moveFrames: [0, 1],
+      flip: false,
+    },
+    left: {
+      image: imageSet.side.image,
+      idleFrame: 0,
+      moveFrames: [0, 1],
+      flip: true,
+    },
+  };
+}
+
+const playerSprites = buildPlayerSprites(characterImages);
+const playerYellowSprites = buildPlayerSprites(yellowCharacterImages);
 
 let controlsOpen = false;
 let tutorialIndex = 0;
@@ -111,6 +132,8 @@ let currentEntry = null;
 let currentExit = null;
 let animationId = null;
 let lastFrameTime = 0;
+let maskItems = [];
+let yellowMaskTimer = 0;
 
 const camera = { x: 0, y: 0 };
 
@@ -340,6 +363,41 @@ function buildMaze() {
   return { grid: highGrid, entry: entryHigh, exit: exitHigh };
 }
 
+function spawnYellowMasks(grid, entry, exit, count) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const candidates = [];
+
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (grid[y][x] !== FLOOR) {
+        continue;
+      }
+      const distEntry = entry
+        ? Math.abs(x - entry.x) + Math.abs(y - entry.y)
+        : 9999;
+      const distExit = exit
+        ? Math.abs(x - exit.x) + Math.abs(y - exit.y)
+        : 9999;
+      if (distEntry < 6 || distExit < 6) {
+        continue;
+      }
+      candidates.push({ x, y });
+    }
+  }
+
+  for (let i = candidates.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  return candidates.slice(0, count).map((point) => ({
+    x: point.x,
+    y: point.y,
+    collected: false,
+  }));
+}
+
 function isWall(grid, x, y) {
   if (!grid) return true;
   if (y < 0 || y >= grid.length || x < 0 || x >= grid[0].length) {
@@ -480,8 +538,33 @@ function updatePlayer(delta) {
   }
 }
 
+function updateMaskTimer(delta) {
+  if (yellowMaskTimer > 0) {
+    yellowMaskTimer = Math.max(0, yellowMaskTimer - delta);
+  }
+}
+
+function checkMaskPickup() {
+  if (!maskItems.length) return;
+  const pickupRadius = player.radius + MASK_ITEM_RADIUS;
+  const pickupRadiusSq = pickupRadius * pickupRadius;
+
+  for (const item of maskItems) {
+    if (item.collected) continue;
+    const cx = item.x + 0.5;
+    const cy = item.y + 0.5;
+    const dx = player.x - cx;
+    const dy = player.y - cy;
+    if (dx * dx + dy * dy <= pickupRadiusSq) {
+      item.collected = true;
+      yellowMaskTimer = MASK_DURATION;
+    }
+  }
+}
+
 function getPlayerFrame() {
-  const sprite = playerSprites[player.direction] || playerSprites.down;
+  const activeSprites = yellowMaskTimer > 0 ? playerYellowSprites : playerSprites;
+  const sprite = activeSprites[player.direction] || activeSprites.down;
   const frame = player.moving
     ? sprite.moveFrames[Math.floor(player.animTime * 6) % sprite.moveFrames.length]
     : sprite.idleFrame;
@@ -535,6 +618,39 @@ function renderPlayer() {
     );
   }
   sceneCtx.restore();
+}
+
+function renderMaskItems(startCol, endCol, startRow, endRow) {
+  if (!maskItems.length) return;
+
+  for (const item of maskItems) {
+    if (item.collected) continue;
+    if (item.x < startCol - 1 || item.x > endCol + 1) continue;
+    if (item.y < startRow - 1 || item.y > endRow + 1) continue;
+
+    const cx = (item.x + 0.5) * TILE_SIZE - camera.x;
+    const cy = (item.y + 0.5) * TILE_SIZE - camera.y;
+    const radius = TILE_SIZE * 0.28;
+
+    const glow = sceneCtx.createRadialGradient(cx, cy, 2, cx, cy, radius * 2);
+    glow.addColorStop(0, "rgba(238, 210, 96, 0.9)");
+    glow.addColorStop(1, "rgba(238, 210, 96, 0)");
+    sceneCtx.fillStyle = glow;
+    sceneCtx.beginPath();
+    sceneCtx.arc(cx, cy, radius * 2, 0, Math.PI * 2);
+    sceneCtx.fill();
+
+    sceneCtx.fillStyle = "#e7c85c";
+    sceneCtx.beginPath();
+    sceneCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    sceneCtx.fill();
+
+    sceneCtx.strokeStyle = "rgba(60, 44, 18, 0.8)";
+    sceneCtx.lineWidth = 2;
+    sceneCtx.beginPath();
+    sceneCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    sceneCtx.stroke();
+  }
 }
 
 function renderMaze(grid) {
@@ -595,6 +711,7 @@ function renderMaze(grid) {
     }
   }
 
+  renderMaskItems(startCol, endCol, startRow, endRow);
   renderPlayer();
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -608,7 +725,11 @@ function renderMaze(grid) {
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(playerScreenX, playerScreenY, FOG_RADIUS_PX, 0, Math.PI * 2);
+  const fogRadius = yellowMaskTimer > 0 ? FOG_RADIUS_MASK : FOG_RADIUS_BASE;
+  const fogDarkness =
+    yellowMaskTimer > 0 ? FOG_DARKNESS_MASK : FOG_DARKNESS_BASE;
+
+  ctx.arc(playerScreenX, playerScreenY, fogRadius, 0, Math.PI * 2);
   ctx.clip();
   ctx.drawImage(sceneCanvas, 0, 0);
   ctx.restore();
@@ -616,13 +737,13 @@ function renderMaze(grid) {
   const gradient = ctx.createRadialGradient(
     playerScreenX,
     playerScreenY,
-    Math.max(0, FOG_RADIUS_PX - FOG_FALLOFF_PX),
+    Math.max(0, fogRadius - FOG_FALLOFF_PX),
     playerScreenX,
     playerScreenY,
-    FOG_RADIUS_PX
+    fogRadius
   );
   gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
-  gradient.addColorStop(1, `rgba(0, 0, 0, ${FOG_DARKNESS})`);
+  gradient.addColorStop(1, `rgba(0, 0, 0, ${fogDarkness})`);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
@@ -631,6 +752,8 @@ function gameLoop(timestamp) {
   const delta = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
   updatePlayer(delta);
+  checkMaskPickup();
+  updateMaskTimer(delta);
   updateCamera();
   if (currentMaze) {
     renderMaze(currentMaze);
@@ -644,6 +767,8 @@ async function generateAndRenderMaze() {
   currentMaze = grid;
   currentEntry = entry;
   currentExit = exit;
+  maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
+  yellowMaskTimer = 0;
   player.x = entry.x + 0.5;
   player.y = entry.y + 0.5;
   player.moving = false;
