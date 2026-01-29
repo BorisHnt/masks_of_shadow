@@ -12,6 +12,7 @@ const skipTutorial = document.getElementById("skip-tutorial");
 const controlsPanel = document.getElementById("controls-panel");
 const closeControls = document.getElementById("close-controls");
 const eventYellowMask = document.getElementById("event-yellow-mask");
+const eventBlueMask = document.getElementById("event-blue-mask");
 const healthFill = document.getElementById("health-fill");
 const healthValue = document.getElementById("health-value");
 const canvas = document.getElementById("game-canvas");
@@ -44,6 +45,8 @@ const MASK_DURATION = 15;
 const MASK_ITEM_COUNT = 150;
 const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
+const BLUE_MASK_DURATION = 15;
+const BLUE_MASK_ITEM_COUNT = 10;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
 const LAKE_COUNT = 6;
@@ -131,8 +134,25 @@ const yellowCharacterImages = {
   ),
 };
 
+const blueCharacterImages = {
+  down: loadImageWithFallback(
+    "assets/characters/human_001_face_blue_mask.png",
+    "assets/characters/human_001_face_blue_mask_sheet.png"
+  ),
+  up: loadImageWithFallback(
+    "assets/characters/human_001_back_blue_mask.png",
+    "assets/characters/human_001_back_blue_mask_sheet.png"
+  ),
+  side: loadImageWithFallback(
+    "assets/characters/human_001_side_blue_mask.png",
+    "assets/characters/human_001_side_blue_mask_sheet.png"
+  ),
+};
+
 const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
+const blueMaskItem = loadImage("assets/items/blue_mask.png");
 const knifeItem = loadImage("assets/items/knife_001.png");
+const roadGuideItem = loadImage("assets/items/road-guide_001.png");
 const lakeTiles = loadImage("assets/lakes/lake_001_tiles.png");
 const lakeTilesImage = lakeTiles.image;
 const groundTiles = loadImage("assets/grounds/tiles_beige_soil_001.png");
@@ -153,8 +173,13 @@ const assetsReady = Promise.all([
   yellowCharacterImages.down.ready,
   yellowCharacterImages.up.ready,
   yellowCharacterImages.side.ready,
+  blueCharacterImages.down.ready,
+  blueCharacterImages.up.ready,
+  blueCharacterImages.side.ready,
   yellowMaskItem.ready,
+  blueMaskItem.ready,
   knifeItem.ready,
+  roadGuideItem.ready,
   lakeTiles.ready,
   groundTiles.ready,
   skeletonImages.down.ready,
@@ -188,6 +213,12 @@ const GROUND_TILE_SOURCES = [
   { x: 16, y: 16 },
 ];
 
+const ROAD_GUIDE_TILES = {
+  straight: { x: 0, y: 0, w: 8, h: 8 },
+  corner: { x: 8, y: 0, w: 8, h: 8 },
+  end: { x: 0, y: 8, w: 8, h: 8 },
+};
+
 function buildPlayerSprites(imageSet) {
   return {
     down: {
@@ -219,6 +250,7 @@ function buildPlayerSprites(imageSet) {
 
 const playerSprites = buildPlayerSprites(characterImages);
 const playerYellowSprites = buildPlayerSprites(yellowCharacterImages);
+const playerBlueSprites = buildPlayerSprites(blueCharacterImages);
 const skeletonSprites = buildPlayerSprites(skeletonImages);
 
 let controlsOpen = false;
@@ -232,6 +264,12 @@ let animationId = null;
 let lastFrameTime = 0;
 let maskItems = [];
 let yellowMaskTimer = 0;
+let blueMaskItems = [];
+let blueMaskTimer = 0;
+let guidePath = null;
+let guidePathMap = null;
+let guideLastCell = { x: -1, y: -1 };
+let guideRecalcTimer = 0;
 let fogRadiusCurrent = FOG_RADIUS_BASE;
 let fogRadiusVelocity = 0;
 let fogDarknessCurrent = FOG_DARKNESS_BASE;
@@ -798,6 +836,10 @@ function spawnYellowMasks(grid, entry, exit, count) {
   }));
 }
 
+function spawnBlueMasks(grid, entry, exit, count) {
+  return spawnYellowMasks(grid, entry, exit, count);
+}
+
 function spawnSkeletons(grid, entry, exit, count) {
   const rows = grid.length;
   const cols = grid[0].length;
@@ -1014,6 +1056,10 @@ function updateEventsUI() {
   } else {
     eventYellowMask.textContent = "Inactive";
   }
+  if (eventBlueMask) {
+    eventBlueMask.textContent =
+      blueMaskTimer > 0 ? formatTime(blueMaskTimer) : "Inactive";
+  }
 }
 
 function updateCamera() {
@@ -1094,6 +1140,9 @@ function updatePlayer(delta) {
 function updateMaskTimer(delta) {
   if (yellowMaskTimer > 0) {
     yellowMaskTimer = Math.max(0, yellowMaskTimer - delta);
+  }
+  if (blueMaskTimer > 0) {
+    blueMaskTimer = Math.max(0, blueMaskTimer - delta);
   }
 }
 
@@ -1197,6 +1246,25 @@ function checkMaskPickup() {
     if (dx * dx + dy * dy <= pickupRadiusSq) {
       item.collected = true;
       yellowMaskTimer = MASK_DURATION;
+    }
+  }
+}
+
+function checkBlueMaskPickup() {
+  if (!blueMaskItems.length) return;
+  const pickupRadius = player.radius + MASK_ITEM_RADIUS;
+  const pickupRadiusSq = pickupRadius * pickupRadius;
+
+  for (const item of blueMaskItems) {
+    if (item.collected) continue;
+    const cx = item.x + 0.5;
+    const cy = item.y + 0.5;
+    const dx = player.x - cx;
+    const dy = player.y - cy;
+    if (dx * dx + dy * dy <= pickupRadiusSq) {
+      item.collected = true;
+      blueMaskTimer = BLUE_MASK_DURATION;
+      guideRecalcTimer = 0;
     }
   }
 }
@@ -1414,7 +1482,12 @@ function updateSkeletons(delta) {
 }
 
 function getPlayerFrame() {
-  const activeSprites = yellowMaskTimer > 0 ? playerYellowSprites : playerSprites;
+  const activeSprites =
+    blueMaskTimer > 0
+      ? playerBlueSprites
+      : yellowMaskTimer > 0
+        ? playerYellowSprites
+        : playerSprites;
   const sprite = activeSprites[player.direction] || activeSprites.down;
   const frame = player.moving
     ? sprite.moveFrames[Math.floor(player.animTime * 6) % sprite.moveFrames.length]
@@ -1588,6 +1661,38 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
   }
 }
 
+function renderBlueMaskItems(startCol, endCol, startRow, endRow) {
+  if (!blueMaskItems.length || !blueMaskItem.image.complete) return;
+
+  for (const item of blueMaskItems) {
+    if (item.collected) continue;
+    if (item.x < startCol - 1 || item.x > endCol + 1) continue;
+    if (item.y < startRow - 1 || item.y > endRow + 1) continue;
+
+    const cx = (item.x + 0.5) * TILE_SIZE - camera.x;
+    const cy = (item.y + 0.5) * TILE_SIZE - camera.y;
+
+    const imgW = blueMaskItem.image.width || SOURCE_TILE_SIZE;
+    const imgH = blueMaskItem.image.height || SOURCE_TILE_SIZE;
+    const maxSize = TILE_SIZE * MASK_ITEM_DRAW_SCALE;
+    const scale = maxSize / Math.max(imgW, imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+
+    sceneCtx.drawImage(
+      blueMaskItem.image,
+      0,
+      0,
+      imgW,
+      imgH,
+      cx - drawW / 2,
+      cy - drawH / 2,
+      drawW,
+      drawH
+    );
+  }
+}
+
 function renderKnives(startCol, endCol, startRow, endRow) {
   if (!knives.length || !knifeItem.image.complete) return;
 
@@ -1624,6 +1729,156 @@ function renderKnives(startCol, endCol, startRow, endRow) {
   }
 }
 
+function updateGuidePath(delta) {
+  if (blueMaskTimer <= 0 || !currentMaze || !currentExit) {
+    guidePath = null;
+    guidePathMap = null;
+    return;
+  }
+
+  guideRecalcTimer = Math.max(0, guideRecalcTimer - delta);
+  const playerCellX = Math.floor(player.x);
+  const playerCellY = Math.floor(player.y);
+  if (
+    guideRecalcTimer > 0 &&
+    playerCellX === guideLastCell.x &&
+    playerCellY === guideLastCell.y
+  ) {
+    return;
+  }
+
+  guideLastCell = { x: playerCellX, y: playerCellY };
+  guideRecalcTimer = 0.5;
+
+  const path = findPathOnGrid(
+    playerCellX,
+    playerCellY,
+    Math.floor(currentExit.x),
+    Math.floor(currentExit.y)
+  );
+  guidePath = path;
+  guidePathMap = new Map();
+  if (path) {
+    path.forEach((node, index) => {
+      guidePathMap.set(`${node.x},${node.y}`, index);
+    });
+  }
+}
+
+function findPathOnGrid(startX, startY, goalX, goalY) {
+  const rows = currentMaze.length;
+  const cols = currentMaze[0].length;
+  const sx = clamp(startX, 0, cols - 1);
+  const sy = clamp(startY, 0, rows - 1);
+  const gx = clamp(goalX, 0, cols - 1);
+  const gy = clamp(goalY, 0, rows - 1);
+  if (isBlocked(currentMaze, sx, sy) || isBlocked(currentMaze, gx, gy)) {
+    return null;
+  }
+
+  const queue = [[sx, sy]];
+  const cameFrom = new Map();
+  const key = (x, y) => `${x},${y}`;
+  cameFrom.set(key(sx, sy), null);
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  while (queue.length) {
+    const [cx, cy] = queue.shift();
+    if (cx === gx && cy === gy) break;
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+      if (isBlocked(currentMaze, nx, ny)) continue;
+      const nk = key(nx, ny);
+      if (cameFrom.has(nk)) continue;
+      cameFrom.set(nk, [cx, cy]);
+      queue.push([nx, ny]);
+    }
+  }
+
+  const goalKey = key(gx, gy);
+  if (!cameFrom.has(goalKey)) return null;
+
+  const path = [];
+  let current = [gx, gy];
+  while (current) {
+    path.push({ x: current[0], y: current[1] });
+    current = cameFrom.get(key(current[0], current[1]));
+  }
+  path.reverse();
+  return path;
+}
+
+function renderGuidePath(startCol, endCol, startRow, endRow) {
+  if (!guidePath || !guidePathMap || !roadGuideItem.image.complete) return;
+
+  for (let y = startRow; y <= endRow; y += 1) {
+    for (let x = startCol; x <= endCol; x += 1) {
+      const index = guidePathMap.get(`${x},${y}`);
+      if (index === undefined) continue;
+
+      const prev = guidePath[index - 1];
+      const next = guidePath[index + 1];
+      let type = ROAD_GUIDE_TILES.end;
+      let rotation = 0;
+
+      if (prev && next) {
+        const dir1 = { x: next.x - x, y: next.y - y };
+        const dir2 = { x: x - prev.x, y: y - prev.y };
+        if (dir1.x === dir2.x && dir1.y === dir2.y) {
+          type = ROAD_GUIDE_TILES.straight;
+          rotation = dir1.x !== 0 ? Math.PI / 2 : 0;
+        } else {
+          type = ROAD_GUIDE_TILES.corner;
+          if ((dir1.x === 1 && dir2.y === -1) || (dir2.x === 1 && dir1.y === -1)) {
+            rotation = Math.PI;
+          } else if ((dir1.x === -1 && dir2.y === -1) || (dir2.x === -1 && dir1.y === -1)) {
+            rotation = Math.PI / 2;
+          } else if ((dir1.x === 1 && dir2.y === 1) || (dir2.x === 1 && dir1.y === 1)) {
+            rotation = -Math.PI / 2;
+          } else {
+            rotation = 0;
+          }
+        }
+      } else if (prev || next) {
+        const dir = prev
+          ? { x: x - prev.x, y: y - prev.y }
+          : { x: next.x - x, y: next.y - y };
+        type = ROAD_GUIDE_TILES.end;
+        if (dir.x === 1) rotation = Math.PI / 2;
+        else if (dir.x === -1) rotation = -Math.PI / 2;
+        else if (dir.y === 1) rotation = Math.PI;
+        else rotation = 0;
+      }
+
+      const centerX = x * TILE_SIZE - camera.x + TILE_SIZE / 2;
+      const centerY = y * TILE_SIZE - camera.y + TILE_SIZE / 2;
+      const guideSize = TILE_SIZE / 2;
+
+      sceneCtx.save();
+      sceneCtx.translate(centerX, centerY);
+      sceneCtx.rotate(rotation);
+      sceneCtx.drawImage(
+        roadGuideItem.image,
+        type.x,
+        type.y,
+        type.w,
+        type.h,
+        -guideSize / 2,
+        -guideSize / 2,
+        guideSize,
+        guideSize
+      );
+      sceneCtx.restore();
+    }
+  }
+}
 function renderMaze(grid) {
   sceneCtx.clearRect(0, 0, canvas.width, canvas.height);
   sceneCtx.fillStyle = "#0b0a08";
@@ -1728,6 +1983,8 @@ function renderMaze(grid) {
   }
 
   renderMaskItems(startCol, endCol, startRow, endRow);
+  renderBlueMaskItems(startCol, endCol, startRow, endRow);
+  renderGuidePath(startCol, endCol, startRow, endRow);
   renderKnives(startCol, endCol, startRow, endRow);
   renderSkeletons(startCol, endCol, startRow, endRow);
   renderPlayer();
@@ -1869,7 +2126,9 @@ function gameLoop(timestamp) {
   applySkeletonContact(delta);
   updateKnives(delta);
   checkMaskPickup();
+  checkBlueMaskPickup();
   updateMaskTimer(delta);
+  updateGuidePath(delta);
   updateFog(delta);
   updateEventsUI();
   updateHealthUI();
@@ -1894,10 +2153,15 @@ async function generateAndRenderMaze() {
   currentExit = exit;
   groundVariantMap = groundVariants;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
+  blueMaskItems = spawnBlueMasks(grid, entry, exit, BLUE_MASK_ITEM_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
   knives = [];
   knifeCooldown = 0;
   yellowMaskTimer = 0;
+  blueMaskTimer = 0;
+  guidePath = null;
+  guidePathMap = null;
+  guideLastCell = { x: -1, y: -1 };
   fogRadiusCurrent = FOG_RADIUS_BASE;
   fogRadiusVelocity = 0;
   fogDarknessCurrent = FOG_DARKNESS_BASE;
