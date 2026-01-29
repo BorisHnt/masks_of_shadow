@@ -102,6 +102,7 @@ body::before {
 .splash .btn {
   font-family: "IM Fell English SC", serif;
   letter-spacing: 0.04em;
+  font-size: 1.5rem;
 }
 
 .btn {
@@ -116,7 +117,6 @@ body::before {
 }
 
 .btn:hover {
-  transform: translateY(-1px);
   background: var(--stone-600);
 }
 
