@@ -45,6 +45,9 @@ const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
+const KNIFE_COOLDOWN = 0.5;
+const KNIFE_RANGE_TILES = 2;
+const KNIFE_SPEED = 12;
 
 const SKELETON_COUNT = 6;
 const SKELETON_SPEED = 4;
@@ -114,6 +117,7 @@ const yellowCharacterImages = {
 };
 
 const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
+const knifeItem = loadImage("assets/items/knife_001.png");
 
 const skeletonImages = {
   down: loadImage("assets/characters/skeleton_001_face.png"),
@@ -130,6 +134,7 @@ const assetsReady = Promise.all([
   yellowCharacterImages.up.ready,
   yellowCharacterImages.side.ready,
   yellowMaskItem.ready,
+  knifeItem.ready,
   skeletonImages.down.ready,
   skeletonImages.up.ready,
   skeletonImages.side.ready,
@@ -201,6 +206,9 @@ let fogDarknessCurrent = FOG_DARKNESS_BASE;
 let fogDarknessVelocity = 0;
 let skeletons = [];
 let contactCooldown = 0;
+let knives = [];
+let knifeCooldown = 0;
+let lastArrowDir = { x: 0, y: -1 };
 
 const camera = { x: 0, y: 0 };
 
@@ -670,6 +678,46 @@ function updateMaskTimer(delta) {
   }
 }
 
+function spawnKnife() {
+  if (knifeCooldown > 0) return;
+  const dir = lastArrowDir;
+  if (dir.x === 0 && dir.y === 0) return;
+
+  knives.push({
+    x: player.x,
+    y: player.y,
+    dx: dir.x,
+    dy: dir.y,
+    traveled: 0,
+  });
+  knifeCooldown = KNIFE_COOLDOWN;
+}
+
+function updateKnives(delta) {
+  if (knifeCooldown > 0) {
+    knifeCooldown = Math.max(0, knifeCooldown - delta);
+  }
+  if (!knives.length) return;
+
+  const speed = KNIFE_SPEED;
+  for (const knife of knives) {
+    const step = speed * delta;
+    const nextX = knife.x + knife.dx * step;
+    const nextY = knife.y + knife.dy * step;
+
+    if (isWall(currentMaze, Math.floor(nextX), Math.floor(nextY))) {
+      knife.traveled = KNIFE_RANGE_TILES + 1;
+      continue;
+    }
+
+    knife.x = nextX;
+    knife.y = nextY;
+    knife.traveled += step;
+  }
+
+  knives = knives.filter((knife) => knife.traveled <= KNIFE_RANGE_TILES);
+}
+
 function applySkeletonContact(delta) {
   if (!skeletons.length || player.health <= 0) return;
   contactCooldown = Math.max(0, contactCooldown - delta);
@@ -1067,6 +1115,42 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
   }
 }
 
+function renderKnives(startCol, endCol, startRow, endRow) {
+  if (!knives.length || !knifeItem.image.complete) return;
+
+  for (const knife of knives) {
+    const kx = Math.floor(knife.x);
+    const ky = Math.floor(knife.y);
+    if (kx < startCol - 2 || kx > endCol + 2) continue;
+    if (ky < startRow - 2 || ky > endRow + 2) continue;
+
+    const screenX = knife.x * TILE_SIZE - camera.x;
+    const screenY = knife.y * TILE_SIZE - camera.y;
+
+    let rotation = 0;
+    if (knife.dx === 1) rotation = Math.PI / 2;
+    else if (knife.dx === -1) rotation = -Math.PI / 2;
+    else if (knife.dy === 1) rotation = Math.PI;
+    else rotation = 0;
+
+    sceneCtx.save();
+    sceneCtx.translate(screenX, screenY);
+    sceneCtx.rotate(rotation);
+    sceneCtx.drawImage(
+      knifeItem.image,
+      0,
+      0,
+      SOURCE_TILE_SIZE,
+      SOURCE_TILE_SIZE,
+      -TILE_SIZE / 2,
+      -TILE_SIZE / 2,
+      TILE_SIZE,
+      TILE_SIZE
+    );
+    sceneCtx.restore();
+  }
+}
+
 function renderMaze(grid) {
   sceneCtx.clearRect(0, 0, canvas.width, canvas.height);
   sceneCtx.fillStyle = "#0b0a08";
@@ -1126,6 +1210,7 @@ function renderMaze(grid) {
   }
 
   renderMaskItems(startCol, endCol, startRow, endRow);
+  renderKnives(startCol, endCol, startRow, endRow);
   renderSkeletons(startCol, endCol, startRow, endRow);
   renderPlayer();
 
@@ -1168,6 +1253,7 @@ function gameLoop(timestamp) {
   updatePlayer(delta);
   updateSkeletons(delta);
   applySkeletonContact(delta);
+  updateKnives(delta);
   checkMaskPickup();
   updateMaskTimer(delta);
   updateFog(delta);
@@ -1188,6 +1274,8 @@ async function generateAndRenderMaze() {
   currentExit = exit;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
+  knives = [];
+  knifeCooldown = 0;
   yellowMaskTimer = 0;
   fogRadiusCurrent = FOG_RADIUS_BASE;
   fogRadiusVelocity = 0;
@@ -1325,6 +1413,10 @@ document.addEventListener("keydown", (event) => {
     setControlsOpen(!controlsOpen);
     return;
   }
+  if (key === "k" && !event.repeat) {
+    spawnKnife();
+    return;
+  }
   if (
     [
       "w",
@@ -1339,6 +1431,11 @@ document.addEventListener("keydown", (event) => {
   ) {
     keys.add(key);
   }
+
+  if (key === "arrowup") lastArrowDir = { x: 0, y: -1 };
+  if (key === "arrowdown") lastArrowDir = { x: 0, y: 1 };
+  if (key === "arrowleft") lastArrowDir = { x: -1, y: 0 };
+  if (key === "arrowright") lastArrowDir = { x: 1, y: 0 };
 });
 
 document.addEventListener("keyup", (event) => {
