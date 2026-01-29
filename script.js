@@ -37,8 +37,9 @@ const FOG_DARKNESS_MASK = 0.75;
 const FOG_FALLOFF_PX = 50;
 
 const MASK_DURATION = 15;
-const MASK_ITEM_COUNT = 10;
+const MASK_ITEM_COUNT = 25;
 const MASK_ITEM_RADIUS = 0.35;
+const PLAYER_SPEED = 6;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -178,7 +179,7 @@ const player = {
   x: 0,
   y: 0,
   radius: 0.32,
-  speed: 4,
+  speed: PLAYER_SPEED,
   direction: "down",
   moving: false,
   animTime: 0,
