@@ -29,7 +29,7 @@ const FLOOR = 0;
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
 
-const FOG_RADIUS_BASE = 250;
+const FOG_RADIUS_BASE = 350;
 const FOG_RADIUS_MASK = 750;
 const FOG_BLUR_PX = 8;
 const FOG_DARKNESS_BASE = 0.95;
@@ -37,8 +37,9 @@ const FOG_DARKNESS_MASK = 0.75;
 const FOG_FALLOFF_PX = 50;
 
 const MASK_DURATION = 15;
-const MASK_ITEM_COUNT = 100;
+const MASK_ITEM_COUNT = 150;
 const MASK_ITEM_RADIUS = 0.35;
+const MASK_ITEM_DRAW_SCALE = 1.6;
 const PLAYER_SPEED = 6;
 
 const FOG_SPRING_STIFFNESS = 40;
@@ -708,16 +709,23 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
       continue;
     }
 
+    const imgW = yellowMaskItem.image.width || SOURCE_TILE_SIZE;
+    const imgH = yellowMaskItem.image.height || SOURCE_TILE_SIZE;
+    const maxSize = TILE_SIZE * MASK_ITEM_DRAW_SCALE;
+    const scale = maxSize / Math.max(imgW, imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+
     sceneCtx.drawImage(
       yellowMaskItem.image,
       0,
       0,
-      SOURCE_TILE_SIZE,
-      SOURCE_TILE_SIZE,
-      cx - TILE_SIZE / 2,
-      cy - TILE_SIZE / 2,
-      TILE_SIZE,
-      TILE_SIZE
+      imgW,
+      imgH,
+      cx - drawW / 2,
+      cy - drawH / 2,
+      drawW,
+      drawH
     );
   }
 }
