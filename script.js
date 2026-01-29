@@ -37,7 +37,7 @@ const FOG_DARKNESS_MASK = 0.75;
 const FOG_FALLOFF_PX = 50;
 
 const MASK_DURATION = 15;
-const MASK_ITEM_COUNT = 25;
+const MASK_ITEM_COUNT = 100;
 const MASK_ITEM_RADIUS = 0.35;
 const PLAYER_SPEED = 6;
 
@@ -704,40 +704,21 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
 
     const cx = (item.x + 0.5) * TILE_SIZE - camera.x;
     const cy = (item.y + 0.5) * TILE_SIZE - camera.y;
-    const radius = TILE_SIZE * 0.28;
-
-    const glow = sceneCtx.createRadialGradient(cx, cy, 2, cx, cy, radius * 2);
-    glow.addColorStop(0, "rgba(238, 210, 96, 0.9)");
-    glow.addColorStop(1, "rgba(238, 210, 96, 0)");
-    sceneCtx.fillStyle = glow;
-    sceneCtx.beginPath();
-    sceneCtx.arc(cx, cy, radius * 2, 0, Math.PI * 2);
-    sceneCtx.fill();
-
-    sceneCtx.fillStyle = "#e7c85c";
-    sceneCtx.beginPath();
-    sceneCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-    sceneCtx.fill();
-
-    sceneCtx.strokeStyle = "rgba(60, 44, 18, 0.8)";
-    sceneCtx.lineWidth = 2;
-    sceneCtx.beginPath();
-    sceneCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-    sceneCtx.stroke();
-
-    if (yellowMaskItem.image.complete) {
-      sceneCtx.drawImage(
-        yellowMaskItem.image,
-        0,
-        0,
-        SOURCE_TILE_SIZE,
-        SOURCE_TILE_SIZE,
-        cx - TILE_SIZE / 2,
-        cy - TILE_SIZE / 2,
-        TILE_SIZE,
-        TILE_SIZE
-      );
+    if (!yellowMaskItem.image.complete) {
+      continue;
     }
+
+    sceneCtx.drawImage(
+      yellowMaskItem.image,
+      0,
+      0,
+      SOURCE_TILE_SIZE,
+      SOURCE_TILE_SIZE,
+      cx - TILE_SIZE / 2,
+      cy - TILE_SIZE / 2,
+      TILE_SIZE,
+      TILE_SIZE
+    );
   }
 }
 
