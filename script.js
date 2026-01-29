@@ -53,7 +53,6 @@ const LAKE_ENTRY_BUFFER = 6;
 const LAKE_SMOOTH_PASSES = 1;
 const LAKE_MIN_COMPONENT_TILES = 120;
 const LAKE_BLOCK_BUFFER = 0;
-const LAKE_EDGE_OPEN_CHANCE = 0.6;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -473,7 +472,7 @@ function buildMaze() {
   const { entry, exit } = carveEntrances(lowGrid);
   const highGrid = upscaleGrid(lowGrid, 2);
   applyLakes(highGrid, lakeMask);
-  softenLakeEdges(highGrid);
+  openLakeEdgesEven(highGrid);
 
   const entryHigh = entry
     ? {
@@ -690,24 +689,53 @@ function applyLakes(highGrid, lakeMask) {
   }
 }
 
-function softenLakeEdges(highGrid) {
+function openLakeEdgesEven(highGrid) {
   const rows = highGrid.length;
   const cols = highGrid[0].length;
-  for (let y = 1; y < rows - 1; y += 1) {
-    for (let x = 1; x < cols - 1; x += 1) {
-      if (highGrid[y][x] !== WALL) continue;
-      const hasWater =
-        highGrid[y - 1][x] === WATER ||
-        highGrid[y + 1][x] === WATER ||
-        highGrid[y][x - 1] === WATER ||
-        highGrid[y][x + 1] === WATER;
-      if (!hasWater) continue;
-      if (Math.random() < LAKE_EDGE_OPEN_CHANCE) {
-        highGrid[y][x] = FLOOR;
+
+  for (let y = 0; y < rows; y += 2) {
+    for (let x = 0; x < cols; x += 2) {
+      let hasWall = false;
+      let touchesWater = false;
+
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const ty = y + dy;
+          const tx = x + dx;
+          if (ty >= rows || tx >= cols) continue;
+          if (highGrid[ty][tx] === WALL) {
+            hasWall = true;
+          }
+          if (highGrid[ty][tx] === WATER) {
+            touchesWater = true;
+          } else {
+            const up = highGrid[ty - 1]?.[tx] === WATER;
+            const down = highGrid[ty + 1]?.[tx] === WATER;
+            const left = highGrid[ty]?.[tx - 1] === WATER;
+            const right = highGrid[ty]?.[tx + 1] === WATER;
+            if (up || down || left || right) {
+              touchesWater = true;
+            }
+          }
+        }
+      }
+
+      if (!hasWall || !touchesWater) continue;
+
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const ty = y + dy;
+          const tx = x + dx;
+          if (ty >= rows || tx >= cols) continue;
+          if (highGrid[ty][tx] === WALL) {
+            highGrid[ty][tx] = FLOOR;
+          }
+        }
       }
     }
   }
 }
+
 
 function spawnYellowMasks(grid, entry, exit, count) {
   const rows = grid.length;
