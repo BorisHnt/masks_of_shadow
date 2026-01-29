@@ -46,11 +46,11 @@ const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
-const LAKE_COUNT = 6;
-const LAKE_MIN_CELLS = 6;
-const LAKE_MAX_CELLS = 18;
+const LAKE_COUNT = 4;
+const LAKE_MIN_CELLS = 24;
+const LAKE_MAX_CELLS = 60;
 const LAKE_RECT_CHANCE = 0.35;
-const LAKE_ENTRY_BUFFER = 4;
+const LAKE_ENTRY_BUFFER = 3;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
@@ -303,15 +303,30 @@ function createGrid(rows, cols, fillValue) {
   return grid;
 }
 
-function generateMazePrim(cellCols, cellRows) {
+function generateMazePrim(cellCols, cellRows, blockedCells = null) {
   const cols = cellCols * 2 + 1;
   const rows = cellRows * 2 + 1;
   const grid = createGrid(rows, cols, WALL);
   const visited = createGrid(cellRows, cellCols, false);
   const frontier = [];
 
-  const startX = Math.floor(Math.random() * cellCols);
-  const startY = Math.floor(Math.random() * cellRows);
+  const candidates = [];
+  for (let y = 0; y < cellRows; y += 1) {
+    for (let x = 0; x < cellCols; x += 1) {
+      if (blockedCells && blockedCells[y] && blockedCells[y][x]) {
+        continue;
+      }
+      candidates.push({ x, y });
+    }
+  }
+
+  if (!candidates.length) {
+    return grid;
+  }
+
+  const start = candidates[Math.floor(Math.random() * candidates.length)];
+  const startX = start.x;
+  const startY = start.y;
 
   visited[startY][startX] = true;
   grid[startY * 2 + 1][startX * 2 + 1] = FLOOR;
@@ -333,6 +348,9 @@ function generateMazePrim(cellCols, cellRows) {
       if (visited[ny][nx]) {
         return;
       }
+      if (blockedCells && blockedCells[ny] && blockedCells[ny][nx]) {
+        return;
+      }
       frontier.push({
         fromX: cx,
         fromY: cy,
@@ -350,6 +368,9 @@ function generateMazePrim(cellCols, cellRows) {
     const index = Math.floor(Math.random() * frontier.length);
     const { toX, toY, wallX, wallY } = frontier.splice(index, 1)[0];
     if (visited[toY][toX]) {
+      continue;
+    }
+    if (blockedCells && blockedCells[toY] && blockedCells[toY][toX]) {
       continue;
     }
     visited[toY][toX] = true;
@@ -436,9 +457,9 @@ function upscaleGrid(grid, scale) {
 }
 
 function buildMaze() {
-  const lowGrid = generateMazePrim(MAZE_CELL_COLS, MAZE_CELL_ROWS);
+  const lakeCells = generateLakesCells(MAZE_CELL_COLS, MAZE_CELL_ROWS);
+  const lowGrid = generateMazePrim(MAZE_CELL_COLS, MAZE_CELL_ROWS, lakeCells);
   const { entry, exit } = carveEntrances(lowGrid);
-  const lakeCells = generateLakes(lowGrid, entry, exit);
   const highGrid = upscaleGrid(lowGrid, 2);
   applyLakes(highGrid, lakeCells);
 
@@ -461,103 +482,23 @@ function buildMaze() {
   return { grid: highGrid, entry: entryHigh, exit: exitHigh };
 }
 
-function getCellCoords(index) {
-  return Math.floor((index - 1) / 2);
-}
-
-function buildCellAdjacency(lowGrid) {
-  const cellRows = (lowGrid.length - 1) / 2;
-  const cellCols = (lowGrid[0].length - 1) / 2;
-  const isOpen = (x, y) => lowGrid[y * 2 + 1][x * 2 + 1] === FLOOR;
-  const adjacency = new Array(cellRows).fill(null).map(() => new Array(cellCols).fill(false));
-
-  for (let y = 0; y < cellRows; y += 1) {
-    for (let x = 0; x < cellCols; x += 1) {
-      adjacency[y][x] = isOpen(x, y);
-    }
-  }
-
-  return { cellRows, cellCols, isOpen };
-}
-
-function buildMainPath(lowGrid, entry, exit) {
-  if (!entry || !exit) return new Set();
-  const { cellRows, cellCols, isOpen } = buildCellAdjacency(lowGrid);
-  const start = {
-    x: clamp(getCellCoords(entry.insideX), 0, cellCols - 1),
-    y: clamp(getCellCoords(entry.insideY), 0, cellRows - 1),
-  };
-  const goal = {
-    x: clamp(getCellCoords(exit.insideX), 0, cellCols - 1),
-    y: clamp(getCellCoords(exit.insideY), 0, cellRows - 1),
-  };
-
-  const queue = [[start.x, start.y]];
-  const cameFrom = new Map();
-  const key = (x, y) => `${x},${y}`;
-  cameFrom.set(key(start.x, start.y), null);
-
-  const dirs = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
-
-  while (queue.length) {
-    const [cx, cy] = queue.shift();
-    if (cx === goal.x && cy === goal.y) break;
-
-    for (const [dx, dy] of dirs) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (nx < 0 || nx >= cellCols || ny < 0 || ny >= cellRows) continue;
-      if (!isOpen(nx, ny)) continue;
-      const wallX = cx * 2 + 1 + dx;
-      const wallY = cy * 2 + 1 + dy;
-      if (lowGrid[wallY][wallX] !== FLOOR) continue;
-      const nk = key(nx, ny);
-      if (cameFrom.has(nk)) continue;
-      cameFrom.set(nk, [cx, cy]);
-      queue.push([nx, ny]);
-    }
-  }
-
-  const goalKey = key(goal.x, goal.y);
-  if (!cameFrom.has(goalKey)) return new Set();
-
-  const path = new Set();
-  let current = [goal.x, goal.y];
-  while (current) {
-    path.add(key(current[0], current[1]));
-    const prev = cameFrom.get(key(current[0], current[1]));
-    current = prev;
-  }
-  return path;
-}
-
-function generateLakes(lowGrid, entry, exit) {
-  const { cellRows, cellCols, isOpen } = buildCellAdjacency(lowGrid);
-  const pathCells = buildMainPath(lowGrid, entry, exit);
+function generateLakesCells(cellCols, cellRows) {
   const lakeCells = new Array(cellRows).fill(null).map(() => new Array(cellCols).fill(false));
 
   const isBlockedCell = (x, y) => {
-    if (!isOpen(x, y)) return true;
     if (lakeCells[y][x]) return true;
-    if (pathCells.has(`${x},${y}`)) return true;
     return false;
   };
 
-  const entryCell = entry
-    ? { x: getCellCoords(entry.insideX), y: getCellCoords(entry.insideY) }
-    : null;
-  const exitCell = exit
-    ? { x: getCellCoords(exit.insideX), y: getCellCoords(exit.insideY) }
-    : null;
+  const inBorderBuffer = (x, y) =>
+    x < LAKE_ENTRY_BUFFER ||
+    y < LAKE_ENTRY_BUFFER ||
+    x >= cellCols - LAKE_ENTRY_BUFFER ||
+    y >= cellRows - LAKE_ENTRY_BUFFER;
 
-  const inBuffer = (x, y, cell) => {
-    if (!cell) return false;
-    return Math.abs(x - cell.x) + Math.abs(y - cell.y) <= LAKE_ENTRY_BUFFER;
+  const inBuffer = (x, y) => {
+    if (inBorderBuffer(x, y)) return true;
+    return false;
   };
 
   const addBlob = (seedX, seedY, targetSize) => {
@@ -579,7 +520,7 @@ function generateLakes(lowGrid, entry, exit) {
       const ny = base.y + dy;
       if (nx < 0 || nx >= cellCols || ny < 0 || ny >= cellRows) continue;
       if (isBlockedCell(nx, ny)) continue;
-      if (inBuffer(nx, ny, entryCell) || inBuffer(nx, ny, exitCell)) continue;
+      if (inBuffer(nx, ny)) continue;
       lakeCells[ny][nx] = true;
       blob.push({ x: nx, y: ny });
     }
@@ -590,7 +531,7 @@ function generateLakes(lowGrid, entry, exit) {
       for (let x = seedX; x < seedX + width; x += 1) {
         if (x < 0 || x >= cellCols || y < 0 || y >= cellRows) continue;
         if (isBlockedCell(x, y)) continue;
-        if (inBuffer(x, y, entryCell) || inBuffer(x, y, exitCell)) continue;
+        if (inBuffer(x, y)) continue;
         lakeCells[y][x] = true;
       }
     }
@@ -603,7 +544,7 @@ function generateLakes(lowGrid, entry, exit) {
     const x = Math.floor(Math.random() * cellCols);
     const y = Math.floor(Math.random() * cellRows);
     if (isBlockedCell(x, y)) continue;
-    if (inBuffer(x, y, entryCell) || inBuffer(x, y, exitCell)) continue;
+    if (inBuffer(x, y)) continue;
 
     const size = Math.floor(
       LAKE_MIN_CELLS + Math.random() * (LAKE_MAX_CELLS - LAKE_MIN_CELLS + 1)
@@ -633,7 +574,7 @@ function applyLakes(highGrid, lakeCells) {
       const baseX = (x * 2 + 1) * 2;
       for (let dy = 0; dy < 2; dy += 1) {
         for (let dx = 0; dx < 2; dx += 1) {
-          if (highGrid[baseY + dy] && highGrid[baseY + dy][baseX + dx] === FLOOR) {
+          if (highGrid[baseY + dy]) {
             highGrid[baseY + dy][baseX + dx] = WATER;
           }
         }
