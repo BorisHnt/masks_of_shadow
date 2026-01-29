@@ -23,7 +23,7 @@ ctx.imageSmoothingEnabled = false;
 sceneCtx.imageSmoothingEnabled = false;
 
 const SOURCE_TILE_SIZE = 16;
-const RENDER_SCALE = 2;
+const RENDER_SCALE = 3;
 const TILE_SIZE = SOURCE_TILE_SIZE * RENDER_SCALE;
 
 const FLOOR = 0;
