@@ -48,6 +48,7 @@ const PLAYER_MAX_HEALTH = 100;
 const KNIFE_COOLDOWN = 0.5;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
+const SKELETON_MAX_HEALTH = 5;
 
 const SKELETON_COUNT = 50;
 const SKELETON_SPEED = 4;
@@ -530,6 +531,7 @@ function spawnSkeletons(grid, entry, exit, count) {
     y: point.y + 0.5,
     radius: SKELETON_RADIUS,
     speed: SKELETON_SPEED,
+    health: SKELETON_MAX_HEALTH,
     direction: "down",
     moving: false,
     animTime: 0,
@@ -740,6 +742,27 @@ function updateKnives(delta) {
     knife.x = nextX;
     knife.y = nextY;
     knife.traveled += step;
+  }
+
+  if (skeletons.length) {
+    const hitRadius = SKELETON_RADIUS + 0.12;
+    const hitRadiusSq = hitRadius * hitRadius;
+    for (const knife of knives) {
+      if (knife.traveled > KNIFE_RANGE_TILES) continue;
+      for (const skeleton of skeletons) {
+        const dx = skeleton.x - knife.x;
+        const dy = skeleton.y - knife.y;
+        if (dx * dx + dy * dy <= hitRadiusSq) {
+          skeleton.health -= 1;
+          if (skeleton.health <= 0) {
+            skeleton._dead = true;
+          }
+          knife.traveled = KNIFE_RANGE_TILES + 1;
+          break;
+        }
+      }
+    }
+    skeletons = skeletons.filter((skeleton) => !skeleton._dead);
   }
 
   knives = knives.filter((knife) => knife.traveled <= KNIFE_RANGE_TILES);
