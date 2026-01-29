@@ -60,6 +60,10 @@ const SKELETON_PATH_INTERVAL = 0.5;
 const SKELETON_PATH_RADIUS = 22;
 const SKELETON_WALL_BUFFER = 0;
 const SKELETON_LOS_STEP = 0.25;
+const SKELETON_ENTRY_MIN_DIST = 6;
+const SKELETON_EXIT_MIN_DIST = 8;
+const SKELETON_NEAR_MAX_DIST = 18;
+const SKELETON_NEAR_COUNT = 12;
 
 const FOG_SPRING_STIFFNESS = 40;
 const FOG_SPRING_DAMPING = 8;
@@ -478,6 +482,7 @@ function spawnSkeletons(grid, entry, exit, count) {
   const rows = grid.length;
   const cols = grid[0].length;
   const candidates = [];
+  const nearCandidates = [];
 
   for (let y = 1; y < rows - 1; y += 1) {
     for (let x = 1; x < cols - 1; x += 1) {
@@ -488,8 +493,14 @@ function spawnSkeletons(grid, entry, exit, count) {
       const distExit = exit
         ? Math.abs(x - exit.x) + Math.abs(y - exit.y)
         : 9999;
-      if (distEntry < 10 || distExit < 8) continue;
-      candidates.push({ x, y });
+      if (distEntry < SKELETON_ENTRY_MIN_DIST || distExit < SKELETON_EXIT_MIN_DIST) {
+        continue;
+      }
+      const point = { x, y };
+      candidates.push(point);
+      if (distEntry <= SKELETON_NEAR_MAX_DIST) {
+        nearCandidates.push(point);
+      }
     }
   }
 
@@ -498,7 +509,23 @@ function spawnSkeletons(grid, entry, exit, count) {
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
 
-  return candidates.slice(0, count).map((point) => ({
+  for (let i = nearCandidates.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [nearCandidates[i], nearCandidates[j]] = [nearCandidates[j], nearCandidates[i]];
+  }
+
+  const selected = [];
+  const nearCount = Math.min(SKELETON_NEAR_COUNT, count, nearCandidates.length);
+  for (let i = 0; i < nearCount; i += 1) {
+    selected.push(nearCandidates[i]);
+  }
+  for (const point of candidates) {
+    if (selected.length >= count) break;
+    if (selected.includes(point)) continue;
+    selected.push(point);
+  }
+
+  return selected.map((point) => ({
     x: point.x + 0.5,
     y: point.y + 0.5,
     radius: SKELETON_RADIUS,
