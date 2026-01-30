@@ -647,7 +647,9 @@ function applyForest(highGrid, forest) {
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
       if (!forest[y] || !forest[y][x]) continue;
-      if (highGrid[y][x] === FLOOR && Math.random() < FOREST_DENSITY) {
+      if (highGrid[y][x] === WATER) continue;
+      highGrid[y][x] = FLOOR;
+      if (Math.random() < FOREST_DENSITY) {
         highGrid[y][x] = TREE;
       }
     }
@@ -658,10 +660,18 @@ function generateGroundVariants(highGrid) {
   const rows = highGrid.length;
   const cols = highGrid[0].length;
   const variants = new Array(rows).fill(null).map(() => new Array(cols).fill(0));
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < cols; x += 1) {
-      if (highGrid[y][x] === FLOOR) {
-        variants[y][x] = Math.floor(Math.random() * 4);
+  for (let y = 0; y < rows; y += 2) {
+    for (let x = 0; x < cols; x += 2) {
+      const variant = Math.floor(Math.random() * 4);
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const ty = y + dy;
+          const tx = x + dx;
+          if (!highGrid[ty]) continue;
+          if (isGroundCell(highGrid[ty][tx])) {
+            variants[ty][tx] = variant;
+          }
+        }
       }
     }
   }
