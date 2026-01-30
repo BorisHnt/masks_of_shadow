@@ -1850,12 +1850,18 @@ function checkLifeFlaskPickup() {
     if (dx * dx + dy * dy <= pickupRadiusSq) {
       item.collected = true;
       lifeFlaskCount += 1;
-      player.health = Math.min(
-        PLAYER_MAX_HEALTH,
-        player.health + PLAYER_MAX_HEALTH * LIFE_FLASK_HEAL_RATIO
-      );
     }
   }
+}
+
+function useLifeFlask() {
+  if (lifeFlaskCount <= 0) return;
+  if (player.health >= PLAYER_MAX_HEALTH) return;
+  lifeFlaskCount -= 1;
+  player.health = Math.min(
+    PLAYER_MAX_HEALTH,
+    player.health + PLAYER_MAX_HEALTH * LIFE_FLASK_HEAL_RATIO
+  );
 }
 
 function applySpring(current, velocity, target, delta, stiffness, damping) {
@@ -3438,6 +3444,10 @@ document.addEventListener("keydown", (event) => {
   }
   if (key === "control" && !event.repeat) {
     setControlsOpen(!controlsOpen);
+    return;
+  }
+  if (key === "l" && !event.repeat) {
+    useLifeFlask();
     return;
   }
   if (key.length === 1 && key >= "a" && key <= "z") {
