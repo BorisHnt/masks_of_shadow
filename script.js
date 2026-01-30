@@ -1816,66 +1816,93 @@ function findPathOnGrid(startX, startY, goalX, goalY) {
 }
 
 function renderGuidePath(startCol, endCol, startRow, endRow) {
-  if (!guidePath || !guidePathMap || !roadGuideItem.image.complete) return;
+  if (!guidePath || !roadGuideItem.image.complete) return;
 
-  for (let y = startRow; y <= endRow; y += 1) {
-    for (let x = startCol; x <= endCol; x += 1) {
-      const index = guidePathMap.get(`${x},${y}`);
-      if (index === undefined) continue;
+  const guideSize = TILE_SIZE / 2;
+  const drawGuide = (gx, gy, type, rotation) => {
+    const centerX = gx * TILE_SIZE - camera.x;
+    const centerY = gy * TILE_SIZE - camera.y;
+    sceneCtx.save();
+    sceneCtx.translate(Math.round(centerX), Math.round(centerY));
+    sceneCtx.rotate(rotation);
+    sceneCtx.drawImage(
+      roadGuideItem.image,
+      type.x,
+      type.y,
+      type.w,
+      type.h,
+      -guideSize / 2,
+      -guideSize / 2,
+      guideSize,
+      guideSize
+    );
+    sceneCtx.restore();
+  };
 
-      const prev = guidePath[index - 1];
-      const next = guidePath[index + 1];
-      let type = ROAD_GUIDE_TILES.end;
-      let rotation = 0;
+  const inView = (gx, gy) => {
+    const tileX = Math.floor(gx);
+    const tileY = Math.floor(gy);
+    return tileX >= startCol - 2 && tileX <= endCol + 2 && tileY >= startRow - 2 && tileY <= endRow + 2;
+  };
 
-      const connUp = (prev && prev.x === x && prev.y === y - 1) || (next && next.x === x && next.y === y - 1);
-      const connDown = (prev && prev.x === x && prev.y === y + 1) || (next && next.x === x && next.y === y + 1);
-      const connLeft = (prev && prev.x === x - 1 && prev.y === y) || (next && next.x === x - 1 && next.y === y);
-      const connRight = (prev && prev.x === x + 1 && prev.y === y) || (next && next.x === x + 1 && next.y === y);
+  const path = guidePath;
+  if (path.length < 2) return;
 
-      const connections = [connUp, connRight, connDown, connLeft].filter(Boolean).length;
+  // Draw straight segments between nodes (midpoints).
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const a = path[i];
+    const b = path[i + 1];
+    const midX = (a.x + b.x) / 2 + 0.5;
+    const midY = (a.y + b.y) / 2 + 0.5;
+    if (!inView(midX, midY)) continue;
+    const horizontal = a.y === b.y;
+    drawGuide(midX, midY, ROAD_GUIDE_TILES.straight, horizontal ? 0 : Math.PI / 2);
+  }
 
-      if (connections >= 2) {
-        if ((connLeft && connRight) || (connUp && connDown)) {
-          type = ROAD_GUIDE_TILES.straight;
-          rotation = connLeft && connRight ? 0 : Math.PI / 2;
-        } else {
-          type = ROAD_GUIDE_TILES.corner;
-          // Base corner connects left + down
-          if (connLeft && connDown) rotation = 0;
-          else if (connDown && connRight) rotation = Math.PI / 2;
-          else if (connRight && connUp) rotation = Math.PI;
-          else if (connUp && connLeft) rotation = -Math.PI / 2;
-        }
+  // Draw corners and ends on nodes.
+  for (let i = 0; i < path.length; i += 1) {
+    const node = path[i];
+    const cx = node.x + 0.5;
+    const cy = node.y + 0.5;
+    if (!inView(cx, cy)) continue;
+
+    const prev = path[i - 1];
+    const next = path[i + 1];
+    let type = ROAD_GUIDE_TILES.end;
+    let rotation = 0;
+
+    if (prev && next) {
+      const dirIn = { x: node.x - prev.x, y: node.y - prev.y };
+      const dirOut = { x: next.x - node.x, y: next.y - node.y };
+      if (dirIn.x === dirOut.x && dirIn.y === dirOut.y) {
+        type = ROAD_GUIDE_TILES.straight;
+        rotation = dirIn.x !== 0 ? 0 : Math.PI / 2;
       } else {
-        type = ROAD_GUIDE_TILES.end;
-        // Base end connects to the right
-        if (connRight) rotation = 0;
-        else if (connDown) rotation = Math.PI / 2;
-        else if (connLeft) rotation = Math.PI;
-        else if (connUp) rotation = -Math.PI / 2;
+        type = ROAD_GUIDE_TILES.corner;
+        // Base corner connects left + down (jointures left & bottom).
+        if ((dirIn.x === -1 && dirOut.y === 1) || (dirOut.x === -1 && dirIn.y === 1)) {
+          rotation = 0;
+        } else if ((dirIn.y === 1 && dirOut.x === 1) || (dirOut.y === 1 && dirIn.x === 1)) {
+          rotation = Math.PI / 2;
+        } else if ((dirIn.x === 1 && dirOut.y === -1) || (dirOut.x === 1 && dirIn.y === -1)) {
+          rotation = Math.PI;
+        } else {
+          rotation = -Math.PI / 2;
+        }
       }
-
-      const centerX = x * TILE_SIZE - camera.x + TILE_SIZE / 2;
-      const centerY = y * TILE_SIZE - camera.y + TILE_SIZE / 2;
-      const guideSize = TILE_SIZE / 2;
-
-      sceneCtx.save();
-      sceneCtx.translate(Math.round(centerX), Math.round(centerY));
-      sceneCtx.rotate(rotation);
-      sceneCtx.drawImage(
-        roadGuideItem.image,
-        type.x,
-        type.y,
-        type.w,
-        type.h,
-        -guideSize / 2,
-        -guideSize / 2,
-        guideSize,
-        guideSize
-      );
-      sceneCtx.restore();
+    } else if (prev || next) {
+      const dir = prev
+        ? { x: node.x - prev.x, y: node.y - prev.y }
+        : { x: next.x - node.x, y: next.y - node.y };
+      type = ROAD_GUIDE_TILES.end;
+      // Base end connects to the right; rotate 180 when heading left.
+      if (dir.x === 1) rotation = 0;
+      else if (dir.x === -1) rotation = Math.PI;
+      else if (dir.y === 1) rotation = Math.PI / 2;
+      else rotation = -Math.PI / 2;
     }
+
+    drawGuide(cx, cy, type, rotation);
   }
 }
 function renderMaze(grid) {
