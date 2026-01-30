@@ -1871,35 +1871,36 @@ function renderGuidePath(startCol, endCol, startRow, endRow) {
     let type = ROAD_GUIDE_TILES.end;
     let rotation = 0;
 
-    if (prev && next) {
-      const dirIn = { x: node.x - prev.x, y: node.y - prev.y };
-      const dirOut = { x: next.x - node.x, y: next.y - node.y };
-      if (dirIn.x === dirOut.x && dirIn.y === dirOut.y) {
+    const connUp = (prev && prev.x === node.x && prev.y === node.y - 1) ||
+      (next && next.x === node.x && next.y === node.y - 1);
+    const connDown = (prev && prev.x === node.x && prev.y === node.y + 1) ||
+      (next && next.x === node.x && next.y === node.y + 1);
+    const connLeft = (prev && prev.x === node.x - 1 && prev.y === node.y) ||
+      (next && next.x === node.x - 1 && next.y === node.y);
+    const connRight = (prev && prev.x === node.x + 1 && prev.y === node.y) ||
+      (next && next.x === node.x + 1 && next.y === node.y);
+
+    const connections = [connUp, connRight, connDown, connLeft].filter(Boolean).length;
+
+    if (connections >= 2) {
+      if ((connLeft && connRight) || (connUp && connDown)) {
         type = ROAD_GUIDE_TILES.straight;
-        rotation = dirIn.x !== 0 ? 0 : Math.PI / 2;
+        rotation = connLeft && connRight ? 0 : Math.PI / 2;
       } else {
         type = ROAD_GUIDE_TILES.corner;
-        // Base corner connects left + down (jointures left & bottom).
-        if ((dirIn.x === -1 && dirOut.y === 1) || (dirOut.x === -1 && dirIn.y === 1)) {
-          rotation = 0;
-        } else if ((dirIn.y === 1 && dirOut.x === 1) || (dirOut.y === 1 && dirIn.x === 1)) {
-          rotation = Math.PI / 2;
-        } else if ((dirIn.x === 1 && dirOut.y === -1) || (dirOut.x === 1 && dirIn.y === -1)) {
-          rotation = Math.PI;
-        } else {
-          rotation = -Math.PI / 2;
-        }
+        // Base corner connects left + down.
+        if (connLeft && connDown) rotation = 0;
+        else if (connDown && connRight) rotation = Math.PI / 2;
+        else if (connRight && connUp) rotation = Math.PI;
+        else if (connUp && connLeft) rotation = -Math.PI / 2;
       }
-    } else if (prev || next) {
-      const dir = prev
-        ? { x: node.x - prev.x, y: node.y - prev.y }
-        : { x: next.x - node.x, y: next.y - node.y };
+    } else if (connections === 1) {
       type = ROAD_GUIDE_TILES.end;
-      // Base end connects to the right; rotate 180 when heading left.
-      if (dir.x === 1) rotation = 0;
-      else if (dir.x === -1) rotation = Math.PI;
-      else if (dir.y === 1) rotation = Math.PI / 2;
-      else rotation = -Math.PI / 2;
+      // Base end connects to the right.
+      if (connRight) rotation = 0;
+      else if (connDown) rotation = Math.PI / 2;
+      else if (connLeft) rotation = Math.PI;
+      else if (connUp) rotation = -Math.PI / 2;
     }
 
     drawGuide(cx, cy, type, rotation);
