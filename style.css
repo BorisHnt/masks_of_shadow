@@ -387,6 +387,22 @@ body.game-active #game {
   font-size: 0.9rem;
 }
 
+.icon-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.icon-btn svg {
+  display: block;
+}
+
 .mask-card {
   display: flex;
   gap: 12px;
