@@ -3441,7 +3441,7 @@ document.addEventListener("keydown", (event) => {
   if (key.length === 1 && key >= "a" && key <= "z") {
     commandBuffer += key;
     commandBufferTimer = 1.2;
-    if (commandBuffer.endsWith("checklvl")) {
+    if (commandBuffer.endsWith("level")) {
       commandBuffer = "";
       exportMapPng();
       return;
