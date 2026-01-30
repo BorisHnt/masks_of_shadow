@@ -60,8 +60,8 @@ const LIFE_FLASK_HEAL_RATIO = 0.25;
 const ITEM_NEAR_PATH_RATIO = 0.2;
 const ITEM_NEAR_PATH_DISTANCE = 2;
 const FOREST_DENSITY = 0.14;
-const FOREST_W = 0.34;
-const FOREST_H = 0.38;
+const FOREST_W = 0.46;
+const FOREST_H = 0.5;
 const FOREST_JITTER = 6;
 const FOREST_HEDGE_CHANCE = 0.6;
 const FOREST_HEDGE_MIN = 2;
@@ -95,9 +95,10 @@ const SKELETON_NEAR_COUNT = 12;
 const SKELETON_PROGRESSIVE_START = 18;
 const SKELETON_PROGRESSIVE_MAX = 50;
 const SKELETON_PROGRESSIVE_BATCH = 3;
-const SKELETON_PROGRESSIVE_INTERVAL = 2.5;
-const SKELETON_SPAWN_MIN_DIST = 6;
-const SKELETON_SPAWN_MAX_DIST = 28;
+const SKELETON_PROGRESSIVE_INTERVAL = 1.6;
+const SKELETON_SPAWN_MIN_DIST = 4;
+const SKELETON_SPAWN_MAX_DIST = 20;
+const SKELETON_AMBIENT_CHANCE = 0.45;
 const SKELETON_DEATH_FRAMES = 4;
 const SKELETON_DEATH_FPS = 8;
 
@@ -2284,11 +2285,24 @@ function updateSkeletonProgressive(delta) {
       (SKELETON_PROGRESSIVE_MAX - SKELETON_PROGRESSIVE_START) * progress
   );
 
-  if (skeletons.length >= target) return;
-
-  const toSpawn = Math.min(SKELETON_PROGRESSIVE_BATCH, target - skeletons.length);
-  const spawned = spawnSkeletonsNearPlayer(toSpawn);
-  skeletons.push(...spawned);
+  if (skeletons.length < target) {
+    const toSpawn = Math.min(SKELETON_PROGRESSIVE_BATCH, target - skeletons.length);
+    const spawned = spawnSkeletonsNearPlayer(toSpawn);
+    skeletons.push(...spawned);
+  } else if (skeletons.length < SKELETON_PROGRESSIVE_MAX) {
+    const rampedChance = SKELETON_AMBIENT_CHANCE * (0.35 + 0.65 * progress);
+    if (Math.random() < rampedChance) {
+      const count = progress > 0.7 ? 2 : 1;
+      const spawned = spawnSkeletonsNearPlayer(count);
+      skeletons.push(...spawned);
+    } else {
+      skeletonSpawnTimer = SKELETON_PROGRESSIVE_INTERVAL;
+      return;
+    }
+  } else {
+    skeletonSpawnTimer = SKELETON_PROGRESSIVE_INTERVAL;
+    return;
+  }
   skeletonSpawnTimer = SKELETON_PROGRESSIVE_INTERVAL;
 }
 
@@ -2735,6 +2749,119 @@ function renderFullMapToCanvas(grid) {
   drawItemSprites(maskItems, yellowMaskItem.image);
   drawItemSprites(blueMaskItems, blueMaskItem.image);
   drawItemSprites(lifeFlaskItems, lifeFlaskItem.image);
+
+  if (guidePath && roadGuideItem.image.complete) {
+    const guideSize = TILE_SIZE / 2;
+    const drawGuide = (gx, gy, type, rotation) => {
+      const centerX = gx * TILE_SIZE;
+      const centerY = gy * TILE_SIZE;
+      mapCtx.save();
+      mapCtx.translate(Math.round(centerX), Math.round(centerY));
+      mapCtx.rotate(rotation);
+      mapCtx.drawImage(
+        roadGuideItem.image,
+        type.x,
+        type.y,
+        type.w,
+        type.h,
+        -guideSize / 2,
+        -guideSize / 2,
+        guideSize,
+        guideSize
+      );
+      mapCtx.restore();
+    };
+
+    if (guidePath.length >= 2) {
+      for (let i = 0; i < guidePath.length - 1; i += 1) {
+        const a = guidePath[i];
+        const b = guidePath[i + 1];
+        const midX = (a.x + b.x) / 2 + 0.5;
+        const midY = (a.y + b.y) / 2 + 0.5;
+        const horizontal = a.y === b.y;
+        drawGuide(
+          midX,
+          midY,
+          ROAD_GUIDE_TILES.straight,
+          horizontal ? 0 : Math.PI / 2
+        );
+      }
+
+      for (let i = 0; i < guidePath.length; i += 1) {
+        const node = guidePath[i];
+        const cx = node.x + 0.5;
+        const cy = node.y + 0.5;
+        const prev = guidePath[i - 1];
+        const next = guidePath[i + 1];
+        let type = ROAD_GUIDE_TILES.end;
+        let rotation = 0;
+
+        const connUp =
+          (prev && prev.x === node.x && prev.y === node.y - 1) ||
+          (next && next.x === node.x && next.y === node.y - 1);
+        const connDown =
+          (prev && prev.x === node.x && prev.y === node.y + 1) ||
+          (next && next.x === node.x && next.y === node.y + 1);
+        const connLeft =
+          (prev && prev.x === node.x - 1 && prev.y === node.y) ||
+          (next && next.x === node.x - 1 && next.y === node.y);
+        const connRight =
+          (prev && prev.x === node.x + 1 && prev.y === node.y) ||
+          (next && next.x === node.x + 1 && next.y === node.y);
+
+        const connections = [connUp, connRight, connDown, connLeft].filter(Boolean).length;
+
+        if (connections >= 2) {
+          if ((connLeft && connRight) || (connUp && connDown)) {
+            type = ROAD_GUIDE_TILES.straight;
+            rotation = connLeft && connRight ? 0 : Math.PI / 2;
+          } else {
+            type = ROAD_GUIDE_TILES.corner;
+            if (connLeft && connDown) rotation = GUIDE_CORNER_ROTATION.LD;
+            else if (connRight && connDown) rotation = GUIDE_CORNER_ROTATION.RD;
+            else if (connRight && connUp) rotation = GUIDE_CORNER_ROTATION.RU;
+            else if (connLeft && connUp) rotation = GUIDE_CORNER_ROTATION.LU;
+          }
+        } else if (connections === 1) {
+          type = ROAD_GUIDE_TILES.end;
+          if (connRight) rotation = 0;
+          else if (connDown) rotation = Math.PI / 2;
+          else if (connLeft) rotation = Math.PI;
+          else if (connUp) rotation = -Math.PI / 2;
+        }
+
+        drawGuide(cx, cy, type, rotation);
+      }
+    }
+  }
+
+  if (knifeItem.image.complete) {
+    for (const knife of knives) {
+      const screenX = knife.x * TILE_SIZE;
+      const screenY = knife.y * TILE_SIZE;
+      let rotation = 0;
+      if (knife.dx === 1) rotation = Math.PI / 2;
+      else if (knife.dx === -1) rotation = -Math.PI / 2;
+      else if (knife.dy === 1) rotation = Math.PI;
+      else rotation = 0;
+
+      mapCtx.save();
+      mapCtx.translate(screenX, screenY);
+      mapCtx.rotate(rotation);
+      mapCtx.drawImage(
+        knifeItem.image,
+        0,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        -TILE_SIZE / 2,
+        -TILE_SIZE / 2,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+      mapCtx.restore();
+    }
+  }
 
   if (treeSprite.image.complete) {
     for (let y = 0; y < rows; y += 1) {
