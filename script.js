@@ -619,7 +619,8 @@ function generateForestMask(highGrid, lakeMask) {
   }
 
   enforceForestContinuity(mask);
-  return mask;
+  const expanded = expandForestMask(mask, 1);
+  return expanded;
 }
 
 function enforceForestContinuity(mask) {
@@ -640,6 +641,36 @@ function enforceForestContinuity(mask) {
       }
     }
   }
+}
+
+function expandForestMask(mask, passes) {
+  const rows = mask.length;
+  const cols = mask[0].length;
+  let current = mask.map((row) => row.slice());
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    const next = current.map((row) => row.slice());
+    for (let y = 1; y < rows - 1; y += 1) {
+      for (let x = 1; x < cols - 1; x += 1) {
+        let neighbors = 0;
+        for (let oy = -1; oy <= 1; oy += 1) {
+          for (let ox = -1; ox <= 1; ox += 1) {
+            if (ox === 0 && oy === 0) continue;
+            if (current[y + oy][x + ox]) neighbors += 1;
+          }
+        }
+        if (!current[y][x] && neighbors >= 5) {
+          next[y][x] = true;
+        }
+        if (current[y][x] && neighbors <= 1) {
+          next[y][x] = false;
+        }
+      }
+    }
+    current = next;
+  }
+
+  return current;
 }
 
 function applyForest(highGrid, forest) {
@@ -742,28 +773,38 @@ function applyForest(highGrid, forest) {
 function removeDiagonalWallContacts(grid) {
   const rows = grid.length;
   const cols = grid[0].length;
-  const toClear = [];
+  const passes = 3;
+  const countOrth = (x, y) =>
+    (grid[y - 1]?.[x] === WALL ? 1 : 0) +
+    (grid[y + 1]?.[x] === WALL ? 1 : 0) +
+    (grid[y]?.[x - 1] === WALL ? 1 : 0) +
+    (grid[y]?.[x + 1] === WALL ? 1 : 0);
 
-  for (let y = 1; y < rows - 1; y += 1) {
-    for (let x = 1; x < cols - 1; x += 1) {
-      if (grid[y][x] !== WALL) continue;
-      const n = grid[y - 1][x] === WALL;
-      const s = grid[y + 1][x] === WALL;
-      const w = grid[y][x - 1] === WALL;
-      const e = grid[y][x + 1] === WALL;
-      if (n || s || w || e) continue;
-      const nw = grid[y - 1][x - 1] === WALL;
-      const ne = grid[y - 1][x + 1] === WALL;
-      const sw = grid[y + 1][x - 1] === WALL;
-      const se = grid[y + 1][x + 1] === WALL;
-      if (nw || ne || sw || se) {
-        toClear.push([x, y]);
+  for (let pass = 0; pass < passes; pass += 1) {
+    const toClear = [];
+    for (let y = 0; y < rows - 1; y += 1) {
+      for (let x = 0; x < cols - 1; x += 1) {
+        const a = grid[y][x] === WALL;
+        const b = grid[y][x + 1] === WALL;
+        const c = grid[y + 1][x] === WALL;
+        const d = grid[y + 1][x + 1] === WALL;
+
+        if (a && d && !b && !c) {
+          const aScore = countOrth(x, y);
+          const dScore = countOrth(x + 1, y + 1);
+          toClear.push(aScore <= dScore ? [x, y] : [x + 1, y + 1]);
+        } else if (b && c && !a && !d) {
+          const bScore = countOrth(x + 1, y);
+          const cScore = countOrth(x, y + 1);
+          toClear.push(bScore <= cScore ? [x + 1, y] : [x, y + 1]);
+        }
       }
     }
-  }
-
-  for (const [x, y] of toClear) {
-    grid[y][x] = FLOOR;
+    for (const [x, y] of toClear) {
+      if (grid[y]?.[x] === WALL) {
+        grid[y][x] = FLOOR;
+      }
+    }
   }
 }
 
@@ -1162,6 +1203,11 @@ function isBlocked(grid, x, y) {
 
 function isGroundCell(value) {
   return value === FLOOR;
+}
+
+function highGridValueIsTree(grid, x, y) {
+  if (!grid || !grid[y]) return false;
+  return grid[y][x] === TREE;
 }
 
 function selectWallTile(x, y, grid = currentMaze) {
@@ -2196,7 +2242,9 @@ function renderMaze(grid) {
       const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
       const dx = x * TILE_SIZE - camera.x;
       const dy = y * TILE_SIZE - camera.y;
-      const useForest = forestMask && forestMask[y] && forestMask[y][x];
+      const useForest =
+        (forestMask && forestMask[y] && forestMask[y][x]) ||
+        highGridValueIsTree(currentMaze, x, y);
       const groundImage = useForest ? forestGroundTilesImage : groundTilesImage;
       if (groundImage.complete) {
         sceneCtx.drawImage(
@@ -2330,7 +2378,9 @@ function renderFullMapToCanvas(grid) {
           ? groundVariantMap[y][x] ?? 0
           : 0;
       const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
-      const useForest = forestMask && forestMask[y] && forestMask[y][x];
+      const useForest =
+        (forestMask && forestMask[y] && forestMask[y][x]) ||
+        highGridValueIsTree(currentMaze, x, y);
       const groundImage = useForest ? forestGroundTilesImage : groundTilesImage;
       if (groundImage.complete) {
         mapCtx.drawImage(
