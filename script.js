@@ -1858,10 +1858,10 @@ function renderGuidePath(startCol, endCol, startRow, endRow) {
 
       const centerX = x * TILE_SIZE - camera.x + TILE_SIZE / 2;
       const centerY = y * TILE_SIZE - camera.y + TILE_SIZE / 2;
-      const guideSize = TILE_SIZE * 0.6;
+      const guideSize = TILE_SIZE / 2;
 
       sceneCtx.save();
-      sceneCtx.translate(centerX, centerY);
+      sceneCtx.translate(Math.round(centerX), Math.round(centerY));
       sceneCtx.rotate(rotation);
       sceneCtx.drawImage(
         roadGuideItem.image,
