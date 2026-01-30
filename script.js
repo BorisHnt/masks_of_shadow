@@ -57,6 +57,8 @@ const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
 const LIFE_FLASK_COUNT = 20;
 const LIFE_FLASK_HEAL_RATIO = 0.25;
+const ITEM_NEAR_PATH_RATIO = 0.2;
+const ITEM_NEAR_PATH_DISTANCE = 2;
 const FOREST_DENSITY = 0.14;
 const FOREST_W = 0.34;
 const FOREST_H = 0.38;
@@ -90,6 +92,12 @@ const SKELETON_ENTRY_MIN_DIST = 6;
 const SKELETON_EXIT_MIN_DIST = 8;
 const SKELETON_NEAR_MAX_DIST = 18;
 const SKELETON_NEAR_COUNT = 12;
+const SKELETON_PROGRESSIVE_START = 18;
+const SKELETON_PROGRESSIVE_MAX = 50;
+const SKELETON_PROGRESSIVE_BATCH = 3;
+const SKELETON_PROGRESSIVE_INTERVAL = 2.5;
+const SKELETON_SPAWN_MIN_DIST = 6;
+const SKELETON_SPAWN_MAX_DIST = 28;
 const SKELETON_DEATH_FRAMES = 4;
 const SKELETON_DEATH_FPS = 8;
 
@@ -300,6 +308,9 @@ let guidePath = null;
 let guidePathMap = null;
 let guideLastCell = { x: -1, y: -1 };
 let guideRecalcTimer = 0;
+let mainPathCells = null;
+let skeletonSpawnTimer = 0;
+let entryExitDist = 1;
 let fogRadiusCurrent = FOG_RADIUS_BASE;
 let fogRadiusVelocity = 0;
 let fogDarknessCurrent = FOG_DARKNESS_BASE;
@@ -1172,6 +1183,8 @@ function spawnYellowMasks(grid, entry, exit, count) {
   const rows = grid.length;
   const cols = grid[0].length;
   const candidates = [];
+  const nearCandidates = [];
+  const pathSet = mainPathCells;
 
   for (let y = 1; y < rows - 1; y += 1) {
     for (let x = 1; x < cols - 1; x += 1) {
@@ -1187,7 +1200,21 @@ function spawnYellowMasks(grid, entry, exit, count) {
       if (distEntry < 6 || distExit < 6) {
         continue;
       }
-      candidates.push({ x, y });
+      const point = { x, y };
+      candidates.push(point);
+      if (pathSet) {
+        let near = false;
+        for (let oy = -ITEM_NEAR_PATH_DISTANCE; oy <= ITEM_NEAR_PATH_DISTANCE; oy += 1) {
+          for (let ox = -ITEM_NEAR_PATH_DISTANCE; ox <= ITEM_NEAR_PATH_DISTANCE; ox += 1) {
+            if (pathSet.has(`${x + ox},${y + oy}`)) {
+              near = true;
+              break;
+            }
+          }
+          if (near) break;
+        }
+        if (near) nearCandidates.push(point);
+      }
     }
   }
 
@@ -1196,7 +1223,26 @@ function spawnYellowMasks(grid, entry, exit, count) {
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
 
-  return candidates.slice(0, count).map((point) => ({
+  for (let i = nearCandidates.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [nearCandidates[i], nearCandidates[j]] = [nearCandidates[j], nearCandidates[i]];
+  }
+
+  const selected = [];
+  const nearCount = Math.min(
+    Math.floor(count * ITEM_NEAR_PATH_RATIO),
+    nearCandidates.length
+  );
+  for (let i = 0; i < nearCount; i += 1) {
+    selected.push(nearCandidates[i]);
+  }
+  for (const point of candidates) {
+    if (selected.length >= count) break;
+    if (selected.includes(point)) continue;
+    selected.push(point);
+  }
+
+  return selected.slice(0, count).map((point) => ({
     x: point.x,
     y: point.y,
     collected: false,
@@ -2224,6 +2270,65 @@ function updateGuidePath(delta) {
   }
 }
 
+function updateSkeletonProgressive(delta) {
+  if (!currentExit || !currentMaze) return;
+  skeletonSpawnTimer = Math.max(0, skeletonSpawnTimer - delta);
+  if (skeletonSpawnTimer > 0) return;
+
+  const dx = Math.abs(player.x - currentExit.x);
+  const dy = Math.abs(player.y - currentExit.y);
+  const dist = dx + dy;
+  const progress = clamp(1 - dist / entryExitDist, 0, 1);
+  const target = Math.round(
+    SKELETON_PROGRESSIVE_START +
+      (SKELETON_PROGRESSIVE_MAX - SKELETON_PROGRESSIVE_START) * progress
+  );
+
+  if (skeletons.length >= target) return;
+
+  const toSpawn = Math.min(SKELETON_PROGRESSIVE_BATCH, target - skeletons.length);
+  const spawned = spawnSkeletonsNearPlayer(toSpawn);
+  skeletons.push(...spawned);
+  skeletonSpawnTimer = SKELETON_PROGRESSIVE_INTERVAL;
+}
+
+function spawnSkeletonsNearPlayer(count) {
+  const rows = currentMaze.length;
+  const cols = currentMaze[0].length;
+  const candidates = [];
+
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (currentMaze[y][x] !== FLOOR) continue;
+      const distPlayer = Math.abs(x - player.x) + Math.abs(y - player.y);
+      if (distPlayer < SKELETON_SPAWN_MIN_DIST) continue;
+      if (distPlayer > SKELETON_SPAWN_MAX_DIST) continue;
+      candidates.push({ x, y });
+    }
+  }
+
+  for (let i = candidates.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  return candidates.slice(0, count).map((point) => ({
+    x: point.x + 0.5,
+    y: point.y + 0.5,
+    radius: SKELETON_RADIUS,
+    speed: SKELETON_SPEED,
+    health: SKELETON_MAX_HEALTH,
+    dead: false,
+    deathTime: 0,
+    direction: "down",
+    moving: false,
+    animTime: 0,
+    wanderTimer: Math.random() * SKELETON_WANDER_TIME,
+    wanderDir: { x: 0, y: 0 },
+    pathTimer: Math.random() * SKELETON_PATH_INTERVAL,
+  }));
+}
+
 function findPathOnGrid(startX, startY, goalX, goalY) {
   const rows = currentMaze.length;
   const cols = currentMaze[0].length;
@@ -2601,6 +2706,168 @@ function renderFullMapToCanvas(grid) {
     }
   }
 
+  const drawItemSprites = (items, image) => {
+    if (!items || !items.length || !image?.complete) return;
+    for (const item of items) {
+      if (item.collected) continue;
+      const cx = (item.x + 0.5) * TILE_SIZE;
+      const cy = (item.y + 0.5) * TILE_SIZE;
+      const imgW = image.width || SOURCE_TILE_SIZE;
+      const imgH = image.height || SOURCE_TILE_SIZE;
+      const maxSize = TILE_SIZE * MASK_ITEM_DRAW_SCALE;
+      const scale = maxSize / Math.max(imgW, imgH);
+      const drawW = imgW * scale;
+      const drawH = imgH * scale;
+      mapCtx.drawImage(
+        image,
+        0,
+        0,
+        imgW,
+        imgH,
+        cx - drawW / 2,
+        cy - drawH / 2,
+        drawW,
+        drawH
+      );
+    }
+  };
+
+  drawItemSprites(maskItems, yellowMaskItem.image);
+  drawItemSprites(blueMaskItems, blueMaskItem.image);
+  drawItemSprites(lifeFlaskItems, lifeFlaskItem.image);
+
+  if (treeSprite.image.complete) {
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        if (grid[y][x] !== TREE) continue;
+        mapCtx.drawImage(
+          treeSprite.image,
+          0,
+          0,
+          SOURCE_TILE_SIZE,
+          SOURCE_TILE_SIZE,
+          x * TILE_SIZE,
+          y * TILE_SIZE,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      }
+    }
+  }
+
+  for (const skeleton of skeletons) {
+    const dx = skeleton.x * TILE_SIZE - TILE_SIZE / 2;
+    const dy = skeleton.y * TILE_SIZE - TILE_SIZE / 2;
+    if (skeleton.dead) {
+      if (!skeletonDeathImage.image.complete) continue;
+      const frame = Math.min(
+        SKELETON_DEATH_FRAMES - 1,
+        Math.floor(skeleton.deathTime * SKELETON_DEATH_FPS)
+      );
+      mapCtx.drawImage(
+        skeletonDeathImage.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+      continue;
+    }
+
+    const { sprite, frame } = getSkeletonFrame(skeleton);
+    if (!sprite || !sprite.image.complete) {
+      mapCtx.fillStyle = "#bdb3a3";
+      mapCtx.beginPath();
+      mapCtx.arc(
+        skeleton.x * TILE_SIZE,
+        skeleton.y * TILE_SIZE,
+        skeleton.radius * TILE_SIZE,
+        0,
+        Math.PI * 2
+      );
+      mapCtx.fill();
+      continue;
+    }
+
+    mapCtx.save();
+    if (sprite.flip) {
+      mapCtx.scale(-1, 1);
+      mapCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        -(dx + TILE_SIZE),
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    } else {
+      mapCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+    mapCtx.restore();
+  }
+
+  const { sprite, frame } = getPlayerFrame();
+  if (!sprite || !sprite.image.complete) {
+    mapCtx.fillStyle = "#d5cdc0";
+    mapCtx.beginPath();
+    mapCtx.arc(
+      player.x * TILE_SIZE,
+      player.y * TILE_SIZE,
+      player.radius * TILE_SIZE,
+      0,
+      Math.PI * 2
+    );
+    mapCtx.fill();
+  } else {
+    const dx = player.x * TILE_SIZE - TILE_SIZE / 2;
+    const dy = player.y * TILE_SIZE - TILE_SIZE / 2;
+    mapCtx.save();
+    if (sprite.flip) {
+      mapCtx.scale(-1, 1);
+      mapCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        -(dx + TILE_SIZE),
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    } else {
+      mapCtx.drawImage(
+        sprite.image,
+        frame * SOURCE_TILE_SIZE,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+    mapCtx.restore();
+  }
+
   return mapCanvas;
 }
 
@@ -2624,6 +2891,7 @@ function gameLoop(timestamp) {
   }
   updatePlayer(delta);
   updateSkeletons(delta);
+  updateSkeletonProgressive(delta);
   applySkeletonContact(delta);
   updateKnives(delta);
   checkMaskPickup();
@@ -2665,13 +2933,26 @@ async function generateAndRenderMaze() {
   currentExit = exit;
   groundVariantMap = groundVariants;
   forestMask = forest;
+  const path = findPathOnGrid(
+    Math.floor(entry.x),
+    Math.floor(entry.y),
+    Math.floor(exit.x),
+    Math.floor(exit.y)
+  );
+  mainPathCells = new Set();
+  if (path) {
+    path.forEach((node) => {
+      mainPathCells.add(`${node.x},${node.y}`);
+    });
+  }
+  entryExitDist = Math.max(1, Math.abs(entry.x - exit.x) + Math.abs(entry.y - exit.y));
   gameOver = false;
   setEndOverlay(deathOverlay, false);
   setEndOverlay(winOverlay, false);
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   blueMaskItems = spawnBlueMasks(grid, entry, exit, BLUE_MASK_ITEM_COUNT);
   lifeFlaskItems = spawnLifeFlasks(grid, entry, exit, LIFE_FLASK_COUNT);
-  skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
+  skeletons = spawnSkeletons(grid, entry, exit, SKELETON_PROGRESSIVE_START);
   knives = [];
   knifeCooldown = 0;
   yellowMaskTimer = 0;
