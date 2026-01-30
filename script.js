@@ -1888,10 +1888,10 @@ function renderGuidePath(startCol, endCol, startRow, endRow) {
         rotation = connLeft && connRight ? 0 : Math.PI / 2;
       } else {
         type = ROAD_GUIDE_TILES.corner;
-        // Base corner connects left + down.
+        // Base corner connects left + down (jointures left & bottom).
         if (connLeft && connDown) rotation = 0;
-        else if (connDown && connRight) rotation = Math.PI / 2;
-        else if (connRight && connUp) rotation = Math.PI;
+        else if (connDown && connRight) rotation = Math.PI;
+        else if (connRight && connUp) rotation = Math.PI / 2;
         else if (connUp && connLeft) rotation = -Math.PI / 2;
       }
     } else if (connections === 1) {
