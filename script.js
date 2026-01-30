@@ -464,6 +464,11 @@ function setScreen(state) {
     splashConfig.setAttribute("aria-hidden", showConfig ? "false" : "true");
   }
   game.setAttribute("aria-hidden", showGame ? "false" : "true");
+  if (!showGame) {
+    setPaused(false);
+    setEndOverlay(deathOverlay, false);
+    setEndOverlay(winOverlay, false);
+  }
 }
 
 function syncSceneSize() {
