@@ -644,13 +644,38 @@ function applyForest(highGrid, forest) {
   const rows = highGrid.length;
   const cols = highGrid[0].length;
 
+  // Apply forest ground (grass) only on walkable floor within the forest mask.
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
       if (!forest[y] || !forest[y][x]) continue;
-      if (highGrid[y][x] === WATER) continue;
-      highGrid[y][x] = FLOOR;
+      if (highGrid[y][x] === FLOOR) {
+        highGrid[y][x] = FLOOR;
+      }
+    }
+  }
+
+  // Place trees as walls on 2x2 blocks of maze walls inside the forest.
+  for (let y = 0; y < rows - 1; y += 2) {
+    for (let x = 0; x < cols - 1; x += 2) {
+      const inForest =
+        forest[y]?.[x] &&
+        forest[y]?.[x + 1] &&
+        forest[y + 1]?.[x] &&
+        forest[y + 1]?.[x + 1];
+      if (!inForest) continue;
+
+      const allWalls =
+        highGrid[y][x] === WALL &&
+        highGrid[y][x + 1] === WALL &&
+        highGrid[y + 1][x] === WALL &&
+        highGrid[y + 1][x + 1] === WALL;
+      if (!allWalls) continue;
+
       if (Math.random() < FOREST_DENSITY) {
         highGrid[y][x] = TREE;
+        highGrid[y][x + 1] = TREE;
+        highGrid[y + 1][x] = TREE;
+        highGrid[y + 1][x + 1] = TREE;
       }
     }
   }
@@ -1050,7 +1075,7 @@ function isBlocked(grid, x, y) {
 }
 
 function isGroundCell(value) {
-  return value === FLOOR || value === TREE;
+  return value === FLOOR;
 }
 
 function selectWallTile(x, y, grid = currentMaze) {
