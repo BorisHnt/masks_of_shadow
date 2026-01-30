@@ -504,6 +504,7 @@ function returnToSplash() {
   setEndOverlay(deathOverlay, false);
   setEndOverlay(winOverlay, false);
   setScreen("splash");
+  window.location.reload();
 }
 
 function endGame(state) {
