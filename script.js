@@ -1828,38 +1828,37 @@ function renderGuidePath(startCol, endCol, startRow, endRow) {
       let type = ROAD_GUIDE_TILES.end;
       let rotation = 0;
 
-      if (prev && next) {
-        const dir1 = { x: next.x - x, y: next.y - y };
-        const dir2 = { x: x - prev.x, y: y - prev.y };
-        if (dir1.x === dir2.x && dir1.y === dir2.y) {
+      const connUp = (prev && prev.x === x && prev.y === y - 1) || (next && next.x === x && next.y === y - 1);
+      const connDown = (prev && prev.x === x && prev.y === y + 1) || (next && next.x === x && next.y === y + 1);
+      const connLeft = (prev && prev.x === x - 1 && prev.y === y) || (next && next.x === x - 1 && next.y === y);
+      const connRight = (prev && prev.x === x + 1 && prev.y === y) || (next && next.x === x + 1 && next.y === y);
+
+      const connections = [connUp, connRight, connDown, connLeft].filter(Boolean).length;
+
+      if (connections >= 2) {
+        if ((connLeft && connRight) || (connUp && connDown)) {
           type = ROAD_GUIDE_TILES.straight;
-          rotation = dir1.x !== 0 ? Math.PI / 2 : 0;
+          rotation = connLeft && connRight ? 0 : Math.PI / 2;
         } else {
           type = ROAD_GUIDE_TILES.corner;
-          if ((dir1.x === 1 && dir2.y === -1) || (dir2.x === 1 && dir1.y === -1)) {
-            rotation = Math.PI;
-          } else if ((dir1.x === -1 && dir2.y === -1) || (dir2.x === -1 && dir1.y === -1)) {
-            rotation = Math.PI / 2;
-          } else if ((dir1.x === 1 && dir2.y === 1) || (dir2.x === 1 && dir1.y === 1)) {
-            rotation = -Math.PI / 2;
-          } else {
-            rotation = 0;
-          }
+          // Base corner connects left + down
+          if (connLeft && connDown) rotation = 0;
+          else if (connDown && connRight) rotation = Math.PI / 2;
+          else if (connRight && connUp) rotation = Math.PI;
+          else if (connUp && connLeft) rotation = -Math.PI / 2;
         }
-      } else if (prev || next) {
-        const dir = prev
-          ? { x: x - prev.x, y: y - prev.y }
-          : { x: next.x - x, y: next.y - y };
+      } else {
         type = ROAD_GUIDE_TILES.end;
-        if (dir.x === 1) rotation = Math.PI / 2;
-        else if (dir.x === -1) rotation = -Math.PI / 2;
-        else if (dir.y === 1) rotation = Math.PI;
-        else rotation = 0;
+        // Base end connects to the right
+        if (connRight) rotation = 0;
+        else if (connDown) rotation = Math.PI / 2;
+        else if (connLeft) rotation = Math.PI;
+        else if (connUp) rotation = -Math.PI / 2;
       }
 
       const centerX = x * TILE_SIZE - camera.x + TILE_SIZE / 2;
       const centerY = y * TILE_SIZE - camera.y + TILE_SIZE / 2;
-      const guideSize = TILE_SIZE / 2;
+      const guideSize = TILE_SIZE * 0.6;
 
       sceneCtx.save();
       sceneCtx.translate(centerX, centerY);
