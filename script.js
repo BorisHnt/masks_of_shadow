@@ -545,6 +545,7 @@ function buildMaze() {
   const forest = generateForestMask(highGrid, lakeMask);
   applyForest(highGrid, forest);
   removeDiagonalWallContacts(highGrid);
+  normalizeTreeBlocks(highGrid, forest);
   const groundVariants = generateGroundVariants(highGrid);
 
   const entryHigh = entry
@@ -620,7 +621,8 @@ function generateForestMask(highGrid, lakeMask) {
 
   enforceForestContinuity(mask);
   const expanded = expandForestMask(mask, 1);
-  return expanded;
+  const evened = enforceEvenMask(expanded);
+  return evened;
 }
 
 function enforceForestContinuity(mask) {
@@ -671,6 +673,36 @@ function expandForestMask(mask, passes) {
   }
 
   return current;
+}
+
+function enforceEvenMask(mask) {
+  const rows = mask.length;
+  const cols = mask[0].length;
+  const out = mask.map((row) => row.slice());
+  for (let y = 0; y < rows; y += 2) {
+    for (let x = 0; x < cols; x += 2) {
+      let has = false;
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          if (out[y + dy]?.[x + dx]) {
+            has = true;
+            break;
+          }
+        }
+        if (has) break;
+      }
+      if (has) {
+        for (let dy = 0; dy < 2; dy += 1) {
+          for (let dx = 0; dx < 2; dx += 1) {
+            if (out[y + dy]) {
+              out[y + dy][x + dx] = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function applyForest(highGrid, forest) {
@@ -803,6 +835,40 @@ function removeDiagonalWallContacts(grid) {
     for (const [x, y] of toClear) {
       if (grid[y]?.[x] === WALL) {
         grid[y][x] = FLOOR;
+      }
+    }
+  }
+}
+
+function normalizeTreeBlocks(grid, forest) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  for (let y = 0; y < rows - 1; y += 2) {
+    for (let x = 0; x < cols - 1; x += 2) {
+      const inForest =
+        forest?.[y]?.[x] &&
+        forest?.[y]?.[x + 1] &&
+        forest?.[y + 1]?.[x] &&
+        forest?.[y + 1]?.[x + 1];
+      if (!inForest) {
+        if (grid[y][x] === TREE) grid[y][x] = WALL;
+        if (grid[y][x + 1] === TREE) grid[y][x + 1] = WALL;
+        if (grid[y + 1][x] === TREE) grid[y + 1][x] = WALL;
+        if (grid[y + 1][x + 1] === TREE) grid[y + 1][x + 1] = WALL;
+        continue;
+      }
+
+      const treeCount =
+        (grid[y][x] === TREE ? 1 : 0) +
+        (grid[y][x + 1] === TREE ? 1 : 0) +
+        (grid[y + 1][x] === TREE ? 1 : 0) +
+        (grid[y + 1][x + 1] === TREE ? 1 : 0);
+
+      if (treeCount > 0 && treeCount < 4) {
+        grid[y][x] = TREE;
+        grid[y][x + 1] = TREE;
+        grid[y + 1][x] = TREE;
+        grid[y + 1][x + 1] = TREE;
       }
     }
   }
