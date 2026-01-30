@@ -391,7 +391,7 @@ body.game-active #game {
   width: 16px;
   height: 16px;
   padding: 0;
-  border: none;
+  border: 1px solid var(--edge-strong);
   background: transparent;
   display: inline-flex;
   align-items: center;
