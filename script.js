@@ -221,9 +221,9 @@ const ROAD_GUIDE_TILES = {
 
 const GUIDE_CORNER_ROTATION = {
   LD: 0,
-  RD: 0,
-  RU: -Math.PI / 2,
-  LU: Math.PI,
+  RD: -Math.PI / 2,
+  RU: -Math.PI,
+  LU: Math.PI / 2,
 };
 
 function buildPlayerSprites(imageSet) {
