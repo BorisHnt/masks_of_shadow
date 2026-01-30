@@ -54,6 +54,8 @@ const FOREST_DENSITY = 0.14;
 const FOREST_W = 0.34;
 const FOREST_H = 0.38;
 const FOREST_JITTER = 6;
+const FOREST_HEDGE_CHANCE = 0.6;
+const FOREST_HEDGE_MIN = 2;
 const LAKE_COUNT = 6;
 const LAKE_STAMPS_MIN = 6;
 const LAKE_STAMPS_MAX = 16;
@@ -542,6 +544,7 @@ function buildMaze() {
   openLakeEdgesEven(highGrid);
   const forest = generateForestMask(highGrid, lakeMask);
   applyForest(highGrid, forest);
+  removeDiagonalWallContacts(highGrid);
   const groundVariants = generateGroundVariants(highGrid);
 
   const entryHigh = entry
@@ -654,30 +657,113 @@ function applyForest(highGrid, forest) {
     }
   }
 
-  // Place trees as walls on 2x2 blocks of maze walls inside the forest.
-  for (let y = 0; y < rows - 1; y += 2) {
-    for (let x = 0; x < cols - 1; x += 2) {
+  // Build hedge lines on 2x2 wall blocks for continuous tree lines.
+  const blockRows = Math.floor((rows - 1) / 2);
+  const blockCols = Math.floor((cols - 1) / 2);
+  const wallBlocks = new Array(blockRows)
+    .fill(null)
+    .map(() => new Array(blockCols).fill(false));
+
+  for (let by = 0; by < blockRows; by += 1) {
+    for (let bx = 0; bx < blockCols; bx += 1) {
+      const y = by * 2;
+      const x = bx * 2;
       const inForest =
         forest[y]?.[x] &&
         forest[y]?.[x + 1] &&
         forest[y + 1]?.[x] &&
         forest[y + 1]?.[x + 1];
       if (!inForest) continue;
-
       const allWalls =
         highGrid[y][x] === WALL &&
         highGrid[y][x + 1] === WALL &&
         highGrid[y + 1][x] === WALL &&
         highGrid[y + 1][x + 1] === WALL;
-      if (!allWalls) continue;
-
-      if (Math.random() < FOREST_DENSITY) {
-        highGrid[y][x] = TREE;
-        highGrid[y][x + 1] = TREE;
-        highGrid[y + 1][x] = TREE;
-        highGrid[y + 1][x + 1] = TREE;
+      if (allWalls) {
+        wallBlocks[by][bx] = true;
       }
     }
+  }
+
+  const toTreeBlock = (bx, by) => {
+    const y = by * 2;
+    const x = bx * 2;
+    highGrid[y][x] = TREE;
+    highGrid[y][x + 1] = TREE;
+    highGrid[y + 1][x] = TREE;
+    highGrid[y + 1][x + 1] = TREE;
+  };
+
+  for (let by = 0; by < blockRows; by += 1) {
+    let bx = 0;
+    while (bx < blockCols) {
+      if (!wallBlocks[by][bx]) {
+        bx += 1;
+        continue;
+      }
+      let length = 1;
+      while (bx + length < blockCols && wallBlocks[by][bx + length]) {
+        length += 1;
+      }
+      if (length >= FOREST_HEDGE_MIN && Math.random() < FOREST_HEDGE_CHANCE) {
+        for (let i = 0; i < length; i += 1) {
+          toTreeBlock(bx + i, by);
+        }
+      } else if (Math.random() < FOREST_DENSITY) {
+        toTreeBlock(bx, by);
+      }
+      bx += length;
+    }
+  }
+
+  for (let bx = 0; bx < blockCols; bx += 1) {
+    let by = 0;
+    while (by < blockRows) {
+      if (!wallBlocks[by][bx]) {
+        by += 1;
+        continue;
+      }
+      let length = 1;
+      while (by + length < blockRows && wallBlocks[by + length][bx]) {
+        length += 1;
+      }
+      if (length >= FOREST_HEDGE_MIN && Math.random() < FOREST_HEDGE_CHANCE) {
+        for (let i = 0; i < length; i += 1) {
+          toTreeBlock(bx, by + i);
+        }
+      } else if (Math.random() < FOREST_DENSITY) {
+        toTreeBlock(bx, by);
+      }
+      by += length;
+    }
+  }
+}
+
+function removeDiagonalWallContacts(grid) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const toClear = [];
+
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (grid[y][x] !== WALL) continue;
+      const n = grid[y - 1][x] === WALL;
+      const s = grid[y + 1][x] === WALL;
+      const w = grid[y][x - 1] === WALL;
+      const e = grid[y][x + 1] === WALL;
+      if (n || s || w || e) continue;
+      const nw = grid[y - 1][x - 1] === WALL;
+      const ne = grid[y - 1][x + 1] === WALL;
+      const sw = grid[y + 1][x - 1] === WALL;
+      const se = grid[y + 1][x + 1] === WALL;
+      if (nw || ne || sw || se) {
+        toClear.push([x, y]);
+      }
+    }
+  }
+
+  for (const [x, y] of toClear) {
+    grid[y][x] = FLOOR;
   }
 }
 
