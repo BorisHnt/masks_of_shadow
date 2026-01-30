@@ -13,6 +13,7 @@ const controlsPanel = document.getElementById("controls-panel");
 const closeControls = document.getElementById("close-controls");
 const eventYellowMask = document.getElementById("event-yellow-mask");
 const eventBlueMask = document.getElementById("event-blue-mask");
+const inventoryFlaskCount = document.getElementById("inventory-flask-count");
 const deathOverlay = document.getElementById("death-overlay");
 const winOverlay = document.getElementById("win-overlay");
 const retryButton = document.getElementById("retry-btn");
@@ -54,6 +55,8 @@ const BLUE_MASK_DURATION = 15;
 const BLUE_MASK_ITEM_COUNT = 30;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
+const LIFE_FLASK_COUNT = 20;
+const LIFE_FLASK_HEAL_RATIO = 0.25;
 const FOREST_DENSITY = 0.14;
 const FOREST_W = 0.34;
 const FOREST_H = 0.38;
@@ -164,6 +167,7 @@ const yellowMaskItem = loadImage("assets/items/yellow_mask.png");
 const blueMaskItem = loadImage("assets/items/blue_mask.png");
 const knifeItem = loadImage("assets/items/knife_001.png");
 const roadGuideItem = loadImage("assets/items/road-guide_001.png");
+const lifeFlaskItem = loadImage("assets/items/live_flask_001.png");
 const lakeTiles = loadImage("assets/lakes/lake_001_tiles.png");
 const lakeTilesImage = lakeTiles.image;
 const groundTiles = loadImage("assets/grounds/tiles_beige_soil_001.png");
@@ -194,6 +198,7 @@ const assetsReady = Promise.all([
   blueMaskItem.ready,
   knifeItem.ready,
   roadGuideItem.ready,
+  lifeFlaskItem.ready,
   lakeTiles.ready,
   groundTiles.ready,
   forestGroundTiles.ready,
@@ -289,6 +294,8 @@ let maskItems = [];
 let yellowMaskTimer = 0;
 let blueMaskItems = [];
 let blueMaskTimer = 0;
+let lifeFlaskItems = [];
+let lifeFlaskCount = 0;
 let guidePath = null;
 let guidePathMap = null;
 let guideLastCell = { x: -1, y: -1 };
@@ -1200,6 +1207,10 @@ function spawnBlueMasks(grid, entry, exit, count) {
   return spawnYellowMasks(grid, entry, exit, count);
 }
 
+function spawnLifeFlasks(grid, entry, exit, count) {
+  return spawnYellowMasks(grid, entry, exit, count);
+}
+
 function spawnSkeletons(grid, entry, exit, count) {
   const rows = grid.length;
   const cols = grid[0].length;
@@ -1429,6 +1440,9 @@ function updateEventsUI() {
     eventBlueMask.textContent =
       blueMaskTimer > 0 ? formatTime(blueMaskTimer) : "Inactive";
   }
+  if (inventoryFlaskCount) {
+    inventoryFlaskCount.textContent = String(lifeFlaskCount);
+  }
 }
 
 function updateCamera() {
@@ -1634,6 +1648,28 @@ function checkBlueMaskPickup() {
       item.collected = true;
       blueMaskTimer = BLUE_MASK_DURATION;
       guideRecalcTimer = 0;
+    }
+  }
+}
+
+function checkLifeFlaskPickup() {
+  if (!lifeFlaskItems.length) return;
+  const pickupRadius = player.radius + MASK_ITEM_RADIUS;
+  const pickupRadiusSq = pickupRadius * pickupRadius;
+
+  for (const item of lifeFlaskItems) {
+    if (item.collected) continue;
+    const cx = item.x + 0.5;
+    const cy = item.y + 0.5;
+    const dx = player.x - cx;
+    const dy = player.y - cy;
+    if (dx * dx + dy * dy <= pickupRadiusSq) {
+      item.collected = true;
+      lifeFlaskCount += 1;
+      player.health = Math.min(
+        PLAYER_MAX_HEALTH,
+        player.health + PLAYER_MAX_HEALTH * LIFE_FLASK_HEAL_RATIO
+      );
     }
   }
 }
@@ -2084,6 +2120,38 @@ function renderBlueMaskItems(startCol, endCol, startRow, endRow) {
   }
 }
 
+function renderLifeFlaskItems(startCol, endCol, startRow, endRow) {
+  if (!lifeFlaskItems.length || !lifeFlaskItem.image.complete) return;
+
+  for (const item of lifeFlaskItems) {
+    if (item.collected) continue;
+    if (item.x < startCol - 1 || item.x > endCol + 1) continue;
+    if (item.y < startRow - 1 || item.y > endRow + 1) continue;
+
+    const cx = (item.x + 0.5) * TILE_SIZE - camera.x;
+    const cy = (item.y + 0.5) * TILE_SIZE - camera.y;
+
+    const imgW = lifeFlaskItem.image.width || SOURCE_TILE_SIZE;
+    const imgH = lifeFlaskItem.image.height || SOURCE_TILE_SIZE;
+    const maxSize = TILE_SIZE * MASK_ITEM_DRAW_SCALE;
+    const scale = maxSize / Math.max(imgW, imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+
+    sceneCtx.drawImage(
+      lifeFlaskItem.image,
+      0,
+      0,
+      imgW,
+      imgH,
+      cx - drawW / 2,
+      cy - drawH / 2,
+      drawW,
+      drawH
+    );
+  }
+}
+
 function renderKnives(startCol, endCol, startRow, endRow) {
   if (!knives.length || !knifeItem.image.complete) return;
 
@@ -2406,6 +2474,7 @@ function renderMaze(grid) {
 
   renderMaskItems(startCol, endCol, startRow, endRow);
   renderBlueMaskItems(startCol, endCol, startRow, endRow);
+  renderLifeFlaskItems(startCol, endCol, startRow, endRow);
   renderGuidePath(startCol, endCol, startRow, endRow);
   renderKnives(startCol, endCol, startRow, endRow);
   renderTrees(startCol, endCol, startRow, endRow);
@@ -2559,6 +2628,7 @@ function gameLoop(timestamp) {
   updateKnives(delta);
   checkMaskPickup();
   checkBlueMaskPickup();
+  checkLifeFlaskPickup();
   updateMaskTimer(delta);
   updateGuidePath(delta);
   updateFog(delta);
@@ -2600,11 +2670,13 @@ async function generateAndRenderMaze() {
   setEndOverlay(winOverlay, false);
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   blueMaskItems = spawnBlueMasks(grid, entry, exit, BLUE_MASK_ITEM_COUNT);
+  lifeFlaskItems = spawnLifeFlasks(grid, entry, exit, LIFE_FLASK_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
   knives = [];
   knifeCooldown = 0;
   yellowMaskTimer = 0;
   blueMaskTimer = 0;
+  lifeFlaskCount = 0;
   guidePath = null;
   guidePathMap = null;
   guideLastCell = { x: -1, y: -1 };

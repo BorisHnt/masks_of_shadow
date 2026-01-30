@@ -286,6 +286,14 @@ body.game-active #game {
   background: var(--stone-700);
 }
 
+.inventory-item {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-200);
+  font-size: 0.9rem;
+}
+
 .mask-card {
   display: flex;
   gap: 12px;
