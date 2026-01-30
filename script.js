@@ -1,7 +1,10 @@
 const body = document.body;
 const splash = document.getElementById("splash");
+const splashConfig = document.getElementById("splash-config");
 const game = document.getElementById("game");
 const playButton = document.getElementById("play-btn");
+const startGameButton = document.getElementById("start-game-btn");
+const backButton = document.getElementById("back-btn");
 const regenButton = document.getElementById("regen-btn");
 const loadingOverlay = document.getElementById("loading-overlay");
 const tutorialOverlay = document.getElementById("tutorial-overlay");
@@ -25,6 +28,11 @@ const ctx = canvas.getContext("2d");
 const sceneCanvas = document.createElement("canvas");
 const sceneCtx = sceneCanvas.getContext("2d");
 
+const difficultyCards = Array.from(
+  document.querySelectorAll("[data-difficulty]")
+);
+const sizeCards = Array.from(document.querySelectorAll("[data-size]"));
+
 ctx.imageSmoothingEnabled = false;
 sceneCtx.imageSmoothingEnabled = false;
 
@@ -37,8 +45,8 @@ const WALL = 1;
 const WATER = 2;
 const TREE = 3;
 
-const MAZE_CELL_COLS = 80;
-const MAZE_CELL_ROWS = 80;
+let MAZE_CELL_COLS = 80;
+let MAZE_CELL_ROWS = 80;
 
 const FOG_RADIUS_BASE = 400;
 const FOG_RADIUS_MASK = 750;
@@ -48,14 +56,14 @@ const FOG_DARKNESS_MASK = 0.75;
 const FOG_FALLOFF_PX = 50;
 
 const MASK_DURATION = 15;
-const MASK_ITEM_COUNT = 30;
+let MASK_ITEM_COUNT = 30;
 const MASK_ITEM_RADIUS = 0.35;
 const MASK_ITEM_DRAW_SCALE = 1;
 const BLUE_MASK_DURATION = 15;
-const BLUE_MASK_ITEM_COUNT = 30;
+let BLUE_MASK_ITEM_COUNT = 30;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
-const LIFE_FLASK_COUNT = 20;
+let LIFE_FLASK_COUNT = 20;
 const LIFE_FLASK_HEAL_RATIO = 0.25;
 const ITEM_NEAR_PATH_RATIO = 0.2;
 const ITEM_NEAR_PATH_DISTANCE = 2;
@@ -75,7 +83,7 @@ const LAKE_BLOCK_BUFFER = 0;
 const KNIFE_COOLDOWN = 0.25;
 const KNIFE_RANGE_TILES = 5;
 const KNIFE_SPEED = 15;
-const SKELETON_MAX_HEALTH = 5;
+let SKELETON_MAX_HEALTH = 5;
 
 const SKELETON_COUNT = 50;
 const SKELETON_SPEED = 3.2;
@@ -92,8 +100,8 @@ const SKELETON_ENTRY_MIN_DIST = 6;
 const SKELETON_EXIT_MIN_DIST = 8;
 const SKELETON_NEAR_MAX_DIST = 18;
 const SKELETON_NEAR_COUNT = 12;
-const SKELETON_PROGRESSIVE_START = 18;
-const SKELETON_PROGRESSIVE_MAX = 50;
+let SKELETON_PROGRESSIVE_START = 18;
+let SKELETON_PROGRESSIVE_MAX = 50;
 const SKELETON_PROGRESSIVE_BATCH = 3;
 const SKELETON_PROGRESSIVE_INTERVAL = 1.6;
 const SKELETON_SPAWN_MIN_DIST = 4;
@@ -374,10 +382,78 @@ const storage = {
   },
 };
 
-function setGameState(active) {
-  body.classList.toggle("game-active", active);
-  splash.setAttribute("aria-hidden", active ? "true" : "false");
-  game.setAttribute("aria-hidden", active ? "false" : "true");
+const DIFFICULTY_PRESETS = {
+  easy: {
+    mask: 50,
+    blue: 50,
+    flask: 35,
+    skeletonMax: 50,
+    skeletonStart: 18,
+    skeletonHp: 2,
+  },
+  medium: {
+    mask: 35,
+    blue: 35,
+    flask: 25,
+    skeletonMax: 65,
+    skeletonStart: 22,
+    skeletonHp: 5,
+  },
+  hard: {
+    mask: 20,
+    blue: 20,
+    flask: 17,
+    skeletonMax: 85,
+    skeletonStart: 28,
+    skeletonHp: 5,
+  },
+  survivor: {
+    mask: 10,
+    blue: 10,
+    flask: 10,
+    skeletonMax: 120,
+    skeletonStart: 36,
+    skeletonHp: 8,
+  },
+};
+
+const SIZE_PRESETS = {
+  little: { cols: 20, rows: 20 },
+  medium: { cols: 40, rows: 40 },
+  big: { cols: 80, rows: 80 },
+  enormous: { cols: 160, rows: 160 },
+};
+
+let currentDifficulty = "easy";
+let currentSize = "big";
+
+function applyDifficultyPreset(name) {
+  const preset = DIFFICULTY_PRESETS[name] || DIFFICULTY_PRESETS.medium;
+  MASK_ITEM_COUNT = preset.mask;
+  BLUE_MASK_ITEM_COUNT = preset.blue;
+  LIFE_FLASK_COUNT = preset.flask;
+  SKELETON_PROGRESSIVE_MAX = preset.skeletonMax;
+  SKELETON_PROGRESSIVE_START = preset.skeletonStart;
+  SKELETON_MAX_HEALTH = preset.skeletonHp;
+}
+
+function applySizePreset(name) {
+  const preset = SIZE_PRESETS[name] || SIZE_PRESETS.big;
+  MAZE_CELL_COLS = preset.cols;
+  MAZE_CELL_ROWS = preset.rows;
+}
+
+function setScreen(state) {
+  const showGame = state === "game";
+  const showConfig = state === "config";
+  body.classList.toggle("game-active", showGame);
+  body.classList.toggle("config-active", showConfig);
+  body.classList.toggle("splash-active", state === "splash");
+  splash.setAttribute("aria-hidden", showGame || showConfig ? "true" : "false");
+  if (splashConfig) {
+    splashConfig.setAttribute("aria-hidden", showConfig ? "false" : "true");
+  }
+  game.setAttribute("aria-hidden", showGame ? "false" : "true");
 }
 
 function syncSceneSize() {
@@ -3196,10 +3272,52 @@ function setControlsOpen(open) {
   controlsPanel.setAttribute("aria-hidden", open ? "false" : "true");
 }
 
+function setSelected(cards, activeCard) {
+  cards.forEach((card) => {
+    card.classList.toggle("is-selected", card === activeCard);
+  });
+}
+
+function applySelections() {
+  applyDifficultyPreset(currentDifficulty);
+  applySizePreset(currentSize);
+}
+
+if (difficultyCards.length) {
+  difficultyCards.forEach((card) => {
+    card.addEventListener("click", () => {
+      currentDifficulty = card.dataset.difficulty || "medium";
+      setSelected(difficultyCards, card);
+    });
+  });
+}
+
+if (sizeCards.length) {
+  sizeCards.forEach((card) => {
+    card.addEventListener("click", () => {
+      currentSize = card.dataset.size || "big";
+      setSelected(sizeCards, card);
+    });
+  });
+}
+
 playButton.addEventListener("click", () => {
-  setGameState(true);
-  simulateGeneration();
+  setScreen("config");
 });
+
+if (backButton) {
+  backButton.addEventListener("click", () => {
+    setScreen("splash");
+  });
+}
+
+if (startGameButton) {
+  startGameButton.addEventListener("click", () => {
+    applySelections();
+    setScreen("game");
+    simulateGeneration();
+  });
+}
 
 regenButton.addEventListener("click", () => {
   simulateGeneration();
@@ -3284,5 +3402,6 @@ window.addEventListener("resize", () => {
 
 window.addEventListener("load", () => {
   body.classList.add("is-ready");
+  setScreen("splash");
   syncSceneSize();
 });

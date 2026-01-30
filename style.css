@@ -7,6 +7,7 @@
   --stone-500: #4a443d;
   --earth-500: #4b392a;
   --earth-400: #5b4634;
+  --accent: #a26e40;
   --moss-500: #47523b;
   --moss-400: #5b6a4c;
   --danger-500: #4f1e1c;
@@ -141,6 +142,26 @@ body.game-active #splash {
   pointer-events: none;
 }
 
+#splash-config {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.config-active #splash {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.config-active #splash-config {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.game-active #splash-config {
+  opacity: 0;
+  pointer-events: none;
+}
+
 #game {
   opacity: 0;
   pointer-events: none;
@@ -149,6 +170,78 @@ body.game-active #splash {
 body.game-active #game {
   opacity: 1;
   pointer-events: auto;
+}
+
+.splash-config .splash-inner {
+  text-align: left;
+}
+
+.splash-config .title {
+  text-align: center;
+}
+
+.splash-config .subtitle {
+  text-align: center;
+}
+
+.config-block {
+  margin: 28px 0;
+}
+
+.config-block h3 {
+  margin: 0 0 14px;
+  font-size: 1.1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-200);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.select-card {
+  border: 1px solid var(--edge);
+  background: rgba(18, 16, 14, 0.85);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--text-100);
+  display: grid;
+  gap: 6px;
+  font-size: 0.95rem;
+  transition: border 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.select-card strong {
+  font-size: 1.15rem;
+  letter-spacing: 0.03em;
+}
+
+.select-card span {
+  color: var(--text-300);
+  font-size: 0.85rem;
+}
+
+.select-card:hover {
+  border-color: var(--edge-strong);
+  transform: translateY(-2px);
+}
+
+.select-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(162, 110, 64, 0.5);
+  background: rgba(31, 27, 22, 0.95);
+}
+
+.config-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
 }
 
 .game {

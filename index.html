@@ -19,6 +19,70 @@
       </div>
     </section>
 
+    <section id="splash-config" class="screen splash splash-config" aria-hidden="true">
+      <div class="splash-inner">
+        <h1 class="title">Choose Your Descent</h1>
+        <p class="subtitle">Select a difficulty and map size before you enter the maze.</p>
+
+        <div class="config-block">
+          <h3>Difficulty</h3>
+          <div class="config-grid">
+            <button class="select-card is-selected" data-difficulty="easy" type="button">
+              <strong>Easy</strong>
+              <span>Masks x50 • Flasks x35</span>
+              <span>Skeletons: Normal</span>
+              <span>Skeleton HP: 2</span>
+            </button>
+            <button class="select-card" data-difficulty="medium" type="button">
+              <strong>Medium</strong>
+              <span>Masks x35 • Flasks x25</span>
+              <span>Skeletons: Normal+</span>
+              <span>Skeleton HP: 5</span>
+            </button>
+            <button class="select-card" data-difficulty="hard" type="button">
+              <strong>Hard</strong>
+              <span>Masks x20 • Flasks x17</span>
+              <span>Skeletons: Numerous</span>
+              <span>Skeleton HP: 5</span>
+            </button>
+            <button class="select-card" data-difficulty="survivor" type="button">
+              <strong>Survivor</strong>
+              <span>Masks x10 • Flasks x10</span>
+              <span>Skeletons: Numerous+++</span>
+              <span>Skeleton HP: 8</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="config-block">
+          <h3>Map Size</h3>
+          <div class="config-grid size-grid">
+            <button class="select-card" data-size="little" type="button">
+              <strong>Little</strong>
+              <span>20 × 20</span>
+            </button>
+            <button class="select-card" data-size="medium" type="button">
+              <strong>Medium</strong>
+              <span>40 × 40</span>
+            </button>
+            <button class="select-card is-selected" data-size="big" type="button">
+              <strong>Big</strong>
+              <span>80 × 80</span>
+            </button>
+            <button class="select-card" data-size="enormous" type="button">
+              <strong>Enormous</strong>
+              <span>160 × 160</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="config-actions">
+          <button class="btn btn-ghost" id="back-btn" type="button">Back</button>
+          <button class="btn btn-primary" id="start-game-btn" type="button">Begin</button>
+        </div>
+      </div>
+    </section>
+
     <section id="game" class="screen game" aria-hidden="true">
       <div class="game-shell">
         <header class="game-topbar">
