@@ -388,8 +388,8 @@ body.game-active #game {
 }
 
 .icon-btn {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 1px solid var(--edge-strong);
   background: transparent;
