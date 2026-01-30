@@ -219,6 +219,13 @@ const ROAD_GUIDE_TILES = {
   end: { x: 0, y: 8, w: 8, h: 8 },
 };
 
+const GUIDE_CORNER_ROTATION = {
+  LD: 0,
+  RD: Math.PI,
+  RU: Math.PI / 2,
+  LU: -Math.PI / 2,
+};
+
 function buildPlayerSprites(imageSet) {
   return {
     down: {
@@ -1889,10 +1896,10 @@ function renderGuidePath(startCol, endCol, startRow, endRow) {
       } else {
         type = ROAD_GUIDE_TILES.corner;
         // Base corner connects left + down (jointures left & bottom).
-        if (connLeft && connDown) rotation = 0;
-        else if (connDown && connRight) rotation = Math.PI;
-        else if (connRight && connUp) rotation = Math.PI / 2;
-        else if (connUp && connLeft) rotation = -Math.PI / 2;
+        if (connLeft && connDown) rotation = GUIDE_CORNER_ROTATION.LD;
+        else if (connRight && connDown) rotation = GUIDE_CORNER_ROTATION.RD;
+        else if (connRight && connUp) rotation = GUIDE_CORNER_ROTATION.RU;
+        else if (connLeft && connUp) rotation = GUIDE_CORNER_ROTATION.LU;
       }
     } else if (connections === 1) {
       type = ROAD_GUIDE_TILES.end;
