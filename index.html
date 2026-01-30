@@ -86,10 +86,8 @@
     <section id="game" class="screen game" aria-hidden="true">
       <div class="game-shell">
         <header class="game-topbar">
-          <div class="crest">M</div>
           <div class="game-title-block">
-            <h2>Shadowscape</h2>
-            <p>Procedural labyrinth harnessing...</p>
+            <h2>Masks of Shadow</h2>
           </div>
           <div class="topbar-actions">
             <button class="btn btn-ghost" id="regen-btn" type="button">Regenerate</button>
@@ -149,6 +147,7 @@
               <ul class="controls-list">
                 <li><span class="keycap">←↑↓→</span><span>Move</span></li>
                 <li><span class="keycap">K</span><span>Throw knife</span></li>
+                <li><span class="keycap">P</span><span>Pause</span></li>
               </ul>
               <p class="controls-note">Press Ctrl to toggle this panel.</p>
             </div>
@@ -187,6 +186,17 @@
         <h2>YOU WIN</h2>
         <p>You escaped the maze.</p>
         <button class="btn btn-primary" id="play-again-btn" type="button">Play again</button>
+      </div>
+    </div>
+
+    <div class="overlay pause-overlay" id="pause-overlay" aria-hidden="true">
+      <div class="pause-card">
+        <h2>PAUSED</h2>
+        <div class="pause-actions">
+          <button class="btn btn-primary" id="pause-continue" type="button">Continue</button>
+          <button class="btn btn-ghost" id="pause-resume" type="button">Resume</button>
+          <button class="btn btn-ghost" id="pause-quit" type="button">Quit</button>
+        </div>
       </div>
     </div>
   </div>

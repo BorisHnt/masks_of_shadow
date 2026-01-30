@@ -581,8 +581,34 @@ body.controls-open .controls-panel {
   z-index: 12;
 }
 
+.pause-overlay {
+  z-index: 13;
+}
+
 .end-overlay {
   z-index: 14;
+}
+
+.pause-card {
+  background: linear-gradient(160deg, rgba(34, 31, 28, 0.97), rgba(18, 16, 14, 0.98));
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 28px 32px 24px;
+  text-align: center;
+  box-shadow: 0 18px 40px var(--shadow);
+  min-width: 280px;
+}
+
+.pause-card h2 {
+  margin: 0 0 16px;
+  font-family: "IM Fell English SC", serif;
+  font-size: 2rem;
+  letter-spacing: 0.1em;
+}
+
+.pause-actions {
+  display: grid;
+  gap: 10px;
 }
 
 .end-card {

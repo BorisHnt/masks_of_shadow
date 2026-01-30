@@ -19,6 +19,10 @@ const eventBlueMask = document.getElementById("event-blue-mask");
 const inventoryFlaskCount = document.getElementById("inventory-flask-count");
 const deathOverlay = document.getElementById("death-overlay");
 const winOverlay = document.getElementById("win-overlay");
+const pauseOverlay = document.getElementById("pause-overlay");
+const pauseContinueButton = document.getElementById("pause-continue");
+const pauseResumeButton = document.getElementById("pause-resume");
+const pauseQuitButton = document.getElementById("pause-quit");
 const retryButton = document.getElementById("retry-btn");
 const playAgainButton = document.getElementById("play-again-btn");
 const healthFill = document.getElementById("health-fill");
@@ -90,8 +94,8 @@ const SKELETON_SPEED = 3.2;
 const SKELETON_RADIUS = 0.5;
 const SKELETON_CHASE_RANGE = 12;
 const SKELETON_WANDER_TIME = 1.1;
-const SKELETON_CONTACT_DPS = 22;
-const SKELETON_CONTACT_COOLDOWN = 0.3;
+let SKELETON_CONTACT_DPS = 22;
+const SKELETON_CONTACT_COOLDOWN = 0.5;
 const SKELETON_PATH_INTERVAL = 0.35;
 const SKELETON_PATH_RADIUS = 22;
 const SKELETON_WALL_BUFFER = 0;
@@ -334,6 +338,7 @@ let commandBufferTimer = 0;
 let groundVariantMap = null;
 let forestMask = null;
 let gameOver = false;
+let paused = false;
 
 const camera = { x: 0, y: 0 };
 
@@ -390,6 +395,7 @@ const DIFFICULTY_PRESETS = {
     skeletonMax: 50,
     skeletonStart: 18,
     skeletonHp: 2,
+    skeletonDps: 20,
   },
   medium: {
     mask: 35,
@@ -398,6 +404,7 @@ const DIFFICULTY_PRESETS = {
     skeletonMax: 65,
     skeletonStart: 22,
     skeletonHp: 5,
+    skeletonDps: 35,
   },
   hard: {
     mask: 20,
@@ -406,6 +413,7 @@ const DIFFICULTY_PRESETS = {
     skeletonMax: 85,
     skeletonStart: 28,
     skeletonHp: 5,
+    skeletonDps: 60,
   },
   survivor: {
     mask: 10,
@@ -414,6 +422,7 @@ const DIFFICULTY_PRESETS = {
     skeletonMax: 120,
     skeletonStart: 36,
     skeletonHp: 8,
+    skeletonDps: 100,
   },
 };
 
@@ -435,6 +444,7 @@ function applyDifficultyPreset(name) {
   SKELETON_PROGRESSIVE_MAX = preset.skeletonMax;
   SKELETON_PROGRESSIVE_START = preset.skeletonStart;
   SKELETON_MAX_HEALTH = preset.skeletonHp;
+  SKELETON_CONTACT_DPS = preset.skeletonDps;
 }
 
 function applySizePreset(name) {
@@ -469,6 +479,25 @@ function showLoading(show) {
 function setEndOverlay(overlay, show) {
   overlay.classList.toggle("is-visible", show);
   overlay.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function setPaused(show) {
+  paused = show;
+  if (pauseOverlay) {
+    pauseOverlay.classList.toggle("is-visible", show);
+    pauseOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+  }
+  if (show) {
+    keys.clear();
+  }
+}
+
+function returnToSplash() {
+  setPaused(false);
+  gameOver = false;
+  setEndOverlay(deathOverlay, false);
+  setEndOverlay(winOverlay, false);
+  setScreen("splash");
 }
 
 function endGame(state) {
@@ -1580,6 +1609,31 @@ function updateCamera() {
   camera.y = Math.round(camera.y);
 }
 
+function isPlayerAtExit() {
+  if (!currentExit || !currentMaze) return false;
+  const rows = currentMaze.length;
+  const cols = currentMaze[0].length;
+  const tileX = Math.floor(player.x);
+  const tileY = Math.floor(player.y);
+  if (tileX < 0 || tileX >= cols || tileY < 0 || tileY >= rows) return false;
+  if (currentMaze[tileY][tileX] !== FLOOR) return false;
+
+  const dx = Math.abs(tileX - Math.floor(currentExit.x));
+  const dy = Math.abs(tileY - Math.floor(currentExit.y));
+
+  switch (currentExit.side) {
+    case "top":
+      return tileY <= 1 && dx <= 1;
+    case "bottom":
+      return tileY >= rows - 2 && dx <= 1;
+    case "left":
+      return tileX <= 1 && dy <= 1;
+    case "right":
+      return tileX >= cols - 2 && dy <= 1;
+    default:
+      return false;
+  }
+}
 function canMoveEntity(x, y, radius) {
   if (!currentMaze) return false;
   const minX = Math.floor(x - radius);
@@ -3092,6 +3146,11 @@ function gameLoop(timestamp) {
     animationId = window.requestAnimationFrame(gameLoop);
     return;
   }
+  if (paused) {
+    renderMaze(currentMaze);
+    animationId = window.requestAnimationFrame(gameLoop);
+    return;
+  }
   updatePlayer(delta);
   updateSkeletons(delta);
   updateSkeletonProgressive(delta);
@@ -3118,12 +3177,8 @@ function gameLoop(timestamp) {
 
   if (player.health <= 0) {
     endGame("death");
-  } else if (currentExit) {
-    const dx = player.x - currentExit.x;
-    const dy = player.y - currentExit.y;
-    if (Math.abs(dx) <= 0.5 && Math.abs(dy) <= 0.5) {
-      endGame("win");
-    }
+  } else if (isPlayerAtExit()) {
+    endGame("win");
   }
   animationId = window.requestAnimationFrame(gameLoop);
 }
@@ -3315,6 +3370,7 @@ if (startGameButton) {
   startGameButton.addEventListener("click", () => {
     applySelections();
     setScreen("game");
+    setPaused(false);
     simulateGeneration();
   });
 }
@@ -3336,16 +3392,43 @@ closeControls.addEventListener("click", () => {
   setControlsOpen(false);
 });
 
+if (pauseContinueButton) {
+  pauseContinueButton.addEventListener("click", () => {
+    setPaused(false);
+  });
+}
+
+if (pauseResumeButton) {
+  pauseResumeButton.addEventListener("click", () => {
+    setPaused(false);
+  });
+}
+
+if (pauseQuitButton) {
+  pauseQuitButton.addEventListener("click", () => {
+    returnToSplash();
+  });
+}
+
 retryButton.addEventListener("click", () => {
-  simulateGeneration();
+  returnToSplash();
 });
 
 playAgainButton.addEventListener("click", () => {
-  simulateGeneration();
+  returnToSplash();
 });
 
 document.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
+  if (key === "p" && !event.repeat) {
+    if (body.classList.contains("game-active") && !gameOver) {
+      setPaused(!paused);
+    }
+    return;
+  }
+  if (paused || gameOver) {
+    return;
+  }
   if (key === "control" && !event.repeat) {
     setControlsOpen(!controlsOpen);
     return;
