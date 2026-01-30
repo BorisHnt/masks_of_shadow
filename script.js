@@ -13,6 +13,10 @@ const controlsPanel = document.getElementById("controls-panel");
 const closeControls = document.getElementById("close-controls");
 const eventYellowMask = document.getElementById("event-yellow-mask");
 const eventBlueMask = document.getElementById("event-blue-mask");
+const deathOverlay = document.getElementById("death-overlay");
+const winOverlay = document.getElementById("win-overlay");
+const retryButton = document.getElementById("retry-btn");
+const playAgainButton = document.getElementById("play-again-btn");
 const healthFill = document.getElementById("health-fill");
 const healthValue = document.getElementById("health-value");
 const canvas = document.getElementById("game-canvas");
@@ -32,13 +36,13 @@ const WALL = 1;
 const WATER = 2;
 const TREE = 3;
 
-const MAZE_CELL_COLS = 60;
-const MAZE_CELL_ROWS = 60;
+const MAZE_CELL_COLS = 80;
+const MAZE_CELL_ROWS = 80;
 
-const FOG_RADIUS_BASE = 300;
+const FOG_RADIUS_BASE = 400;
 const FOG_RADIUS_MASK = 750;
 const FOG_BLUR_PX = 8;
-const FOG_DARKNESS_BASE = 0.98;
+const FOG_DARKNESS_BASE = 0.99;
 const FOG_DARKNESS_MASK = 0.75;
 const FOG_FALLOFF_PX = 50;
 
@@ -63,14 +67,14 @@ const LAKE_ENTRY_BUFFER = 6;
 const LAKE_SMOOTH_PASSES = 1;
 const LAKE_MIN_COMPONENT_TILES = 80;
 const LAKE_BLOCK_BUFFER = 0;
-const KNIFE_COOLDOWN = 0.5;
+const KNIFE_COOLDOWN = 0.25;
 const KNIFE_RANGE_TILES = 2;
 const KNIFE_SPEED = 12;
 const SKELETON_MAX_HEALTH = 5;
 
 const SKELETON_COUNT = 50;
 const SKELETON_SPEED = 4;
-const SKELETON_RADIUS = 0.32;
+const SKELETON_RADIUS = 0.5;
 const SKELETON_CHASE_RANGE = 9;
 const SKELETON_WANDER_TIME = 1.6;
 const SKELETON_CONTACT_DPS = 15;
@@ -302,6 +306,7 @@ let commandBuffer = "";
 let commandBufferTimer = 0;
 let groundVariantMap = null;
 let forestMask = null;
+let gameOver = false;
 
 const camera = { x: 0, y: 0 };
 
@@ -364,6 +369,22 @@ function syncSceneSize() {
 function showLoading(show) {
   loadingOverlay.classList.toggle("is-visible", show);
   loadingOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function setEndOverlay(overlay, show) {
+  overlay.classList.toggle("is-visible", show);
+  overlay.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function endGame(state) {
+  gameOver = true;
+  if (state === "win") {
+    setEndOverlay(winOverlay, true);
+    setEndOverlay(deathOverlay, false);
+  } else {
+    setEndOverlay(deathOverlay, true);
+    setEndOverlay(winOverlay, false);
+  }
 }
 
 function createGrid(rows, cols, fillValue) {
@@ -2527,6 +2548,11 @@ async function exportMapPng() {
 function gameLoop(timestamp) {
   const delta = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
+  if (gameOver) {
+    renderMaze(currentMaze);
+    animationId = window.requestAnimationFrame(gameLoop);
+    return;
+  }
   updatePlayer(delta);
   updateSkeletons(delta);
   applySkeletonContact(delta);
@@ -2548,6 +2574,16 @@ function gameLoop(timestamp) {
   if (currentMaze) {
     renderMaze(currentMaze);
   }
+
+  if (player.health <= 0) {
+    endGame("death");
+  } else if (currentExit) {
+    const dx = player.x - currentExit.x;
+    const dy = player.y - currentExit.y;
+    if (Math.abs(dx) <= 0.5 && Math.abs(dy) <= 0.5) {
+      endGame("win");
+    }
+  }
   animationId = window.requestAnimationFrame(gameLoop);
 }
 
@@ -2559,6 +2595,9 @@ async function generateAndRenderMaze() {
   currentExit = exit;
   groundVariantMap = groundVariants;
   forestMask = forest;
+  gameOver = false;
+  setEndOverlay(deathOverlay, false);
+  setEndOverlay(winOverlay, false);
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   blueMaskItems = spawnBlueMasks(grid, entry, exit, BLUE_MASK_ITEM_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
@@ -2697,6 +2736,14 @@ skipTutorial.addEventListener("click", () => {
 
 closeControls.addEventListener("click", () => {
   setControlsOpen(false);
+});
+
+retryButton.addEventListener("click", () => {
+  simulateGeneration();
+});
+
+playAgainButton.addEventListener("click", () => {
+  simulateGeneration();
 });
 
 document.addEventListener("keydown", (event) => {
