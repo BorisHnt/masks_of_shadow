@@ -30,6 +30,7 @@ const TILE_SIZE = SOURCE_TILE_SIZE * RENDER_SCALE;
 const FLOOR = 0;
 const WALL = 1;
 const WATER = 2;
+const TREE = 3;
 
 const MAZE_CELL_COLS = 60;
 const MAZE_CELL_ROWS = 60;
@@ -49,6 +50,10 @@ const BLUE_MASK_DURATION = 15;
 const BLUE_MASK_ITEM_COUNT = 150;
 const PLAYER_SPEED = 6;
 const PLAYER_MAX_HEALTH = 100;
+const FOREST_DENSITY = 0.14;
+const FOREST_W = 0.34;
+const FOREST_H = 0.38;
+const FOREST_JITTER = 6;
 const LAKE_COUNT = 6;
 const LAKE_STAMPS_MIN = 6;
 const LAKE_STAMPS_MAX = 16;
@@ -157,6 +162,9 @@ const lakeTiles = loadImage("assets/lakes/lake_001_tiles.png");
 const lakeTilesImage = lakeTiles.image;
 const groundTiles = loadImage("assets/grounds/tiles_beige_soil_001.png");
 const groundTilesImage = groundTiles.image;
+const forestGroundTiles = loadImage("assets/grounds/tiles_green_herb_001.png");
+const forestGroundTilesImage = forestGroundTiles.image;
+const treeSprite = loadImage("assets/nature/tree_16x16_001.png");
 
 const skeletonImages = {
   down: loadImage("assets/characters/skeleton_001_face.png"),
@@ -182,6 +190,8 @@ const assetsReady = Promise.all([
   roadGuideItem.ready,
   lakeTiles.ready,
   groundTiles.ready,
+  forestGroundTiles.ready,
+  treeSprite.ready,
   skeletonImages.down.ready,
   skeletonImages.up.ready,
   skeletonImages.side.ready,
@@ -289,6 +299,7 @@ let lastArrowDir = { x: 0, y: -1 };
 let commandBuffer = "";
 let commandBufferTimer = 0;
 let groundVariantMap = null;
+let forestMask = null;
 
 const camera = { x: 0, y: 0 };
 
@@ -529,6 +540,8 @@ function buildMaze() {
   const highGrid = upscaleGrid(lowGrid, 2);
   applyLakes(highGrid, lakeMask);
   openLakeEdgesEven(highGrid);
+  const forest = generateForestMask(highGrid, lakeMask);
+  applyForest(highGrid, forest);
   const groundVariants = generateGroundVariants(highGrid);
 
   const entryHigh = entry
@@ -547,7 +560,98 @@ function buildMaze() {
       }
     : { x: highGrid[0].length - 2, y: highGrid.length - 2, side: "bottom" };
 
-  return { grid: highGrid, entry: entryHigh, exit: exitHigh, groundVariants };
+  return {
+    grid: highGrid,
+    entry: entryHigh,
+    exit: exitHigh,
+    groundVariants,
+    forestMask: forest,
+  };
+}
+
+function generateForestMask(highGrid, lakeMask) {
+  const rows = highGrid.length;
+  const cols = highGrid[0].length;
+  const mask = new Array(rows).fill(null).map(() => new Array(cols).fill(false));
+
+  const maxW = Math.floor(cols * FOREST_W);
+  const maxH = Math.floor(rows * FOREST_H);
+  const w = Math.max(16, maxW);
+  const h = Math.max(16, maxH);
+
+  const notchW = Math.floor(w * 0.45);
+  const notchH = Math.floor(h * 0.45);
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (x >= w - notchW && y >= h - notchH) continue;
+      mask[y][x] = true;
+    }
+  }
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (!mask[y][x]) continue;
+      const edge =
+        x < FOREST_JITTER ||
+        y < FOREST_JITTER ||
+        x > w - FOREST_JITTER ||
+        y > h - FOREST_JITTER;
+      if (edge && Math.random() < 0.25) {
+        mask[y][x] = false;
+      }
+      if (!edge && Math.random() < 0.02) {
+        mask[y][x] = false;
+      }
+    }
+  }
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (!mask[y][x]) continue;
+      if (lakeMask && lakeMask[y] && lakeMask[y][x]) {
+        mask[y][x] = false;
+      }
+    }
+  }
+
+  enforceForestContinuity(mask);
+  return mask;
+}
+
+function enforceForestContinuity(mask) {
+  const rows = mask.length;
+  const cols = mask[0].length;
+  for (let y = 1; y < rows - 1; y += 1) {
+    for (let x = 1; x < cols - 1; x += 1) {
+      if (!mask[y][x]) continue;
+      let neighbors = 0;
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          if (ox === 0 && oy === 0) continue;
+          if (mask[y + oy][x + ox]) neighbors += 1;
+        }
+      }
+      if (neighbors <= 2 && Math.random() < 0.6) {
+        mask[y][x] = false;
+      }
+    }
+  }
+}
+
+function applyForest(highGrid, forest) {
+  if (!forest) return;
+  const rows = highGrid.length;
+  const cols = highGrid[0].length;
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (!forest[y] || !forest[y][x]) continue;
+      if (highGrid[y][x] === FLOOR && Math.random() < FOREST_DENSITY) {
+        highGrid[y][x] = TREE;
+      }
+    }
+  }
 }
 
 function generateGroundVariants(highGrid) {
@@ -933,6 +1037,10 @@ function isBlocked(grid, x, y) {
     return true;
   }
   return grid[y][x] !== FLOOR;
+}
+
+function isGroundCell(value) {
+  return value === FLOOR || value === TREE;
 }
 
 function selectWallTile(x, y, grid = currentMaze) {
@@ -1668,6 +1776,28 @@ function renderMaskItems(startCol, endCol, startRow, endRow) {
   }
 }
 
+function renderTrees(startCol, endCol, startRow, endRow) {
+  if (!treeSprite.image.complete) return;
+  for (let y = startRow; y <= endRow; y += 1) {
+    for (let x = startCol; x <= endCol; x += 1) {
+      if (currentMaze[y][x] !== TREE) continue;
+      const dx = x * TILE_SIZE - camera.x;
+      const dy = y * TILE_SIZE - camera.y;
+      sceneCtx.drawImage(
+        treeSprite.image,
+        0,
+        0,
+        SOURCE_TILE_SIZE,
+        SOURCE_TILE_SIZE,
+        dx,
+        dy,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+  }
+}
+
 function renderBlueMaskItems(startCol, endCol, startRow, endRow) {
   if (!blueMaskItems.length || !blueMaskItem.image.complete) return;
 
@@ -1935,7 +2065,7 @@ function renderMaze(grid) {
 
   for (let y = startRow; y <= endRow; y += 1) {
     for (let x = startCol; x <= endCol; x += 1) {
-      if (grid[y][x] !== FLOOR) {
+      if (!isGroundCell(grid[y][x])) {
         continue;
       }
       const variant =
@@ -1945,9 +2075,11 @@ function renderMaze(grid) {
       const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
       const dx = x * TILE_SIZE - camera.x;
       const dy = y * TILE_SIZE - camera.y;
-      if (groundTilesImage.complete) {
+      const useForest = forestMask && forestMask[y] && forestMask[y][x];
+      const groundImage = useForest ? forestGroundTilesImage : groundTilesImage;
+      if (groundImage.complete) {
         sceneCtx.drawImage(
-          groundTilesImage,
+          groundImage,
           source.x,
           source.y,
           SOURCE_TILE_SIZE,
@@ -2020,6 +2152,7 @@ function renderMaze(grid) {
   renderBlueMaskItems(startCol, endCol, startRow, endRow);
   renderGuidePath(startCol, endCol, startRow, endRow);
   renderKnives(startCol, endCol, startRow, endRow);
+  renderTrees(startCol, endCol, startRow, endRow);
   renderSkeletons(startCol, endCol, startRow, endRow);
   renderPlayer();
 
@@ -2070,15 +2203,17 @@ function renderFullMapToCanvas(grid) {
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
-      if (grid[y][x] !== FLOOR) continue;
+      if (!isGroundCell(grid[y][x])) continue;
       const variant =
         groundVariantMap && groundVariantMap[y]
           ? groundVariantMap[y][x] ?? 0
           : 0;
       const source = GROUND_TILE_SOURCES[variant] || GROUND_TILE_SOURCES[0];
-      if (groundTilesImage.complete) {
+      const useForest = forestMask && forestMask[y] && forestMask[y][x];
+      const groundImage = useForest ? forestGroundTilesImage : groundTilesImage;
+      if (groundImage.complete) {
         mapCtx.drawImage(
-          groundTilesImage,
+          groundImage,
           source.x,
           source.y,
           SOURCE_TILE_SIZE,
@@ -2181,11 +2316,12 @@ function gameLoop(timestamp) {
 
 async function generateAndRenderMaze() {
   await assetsReady;
-  const { grid, entry, exit, groundVariants } = buildMaze();
+  const { grid, entry, exit, groundVariants, forestMask: forest } = buildMaze();
   currentMaze = grid;
   currentEntry = entry;
   currentExit = exit;
   groundVariantMap = groundVariants;
+  forestMask = forest;
   maskItems = spawnYellowMasks(grid, entry, exit, MASK_ITEM_COUNT);
   blueMaskItems = spawnBlueMasks(grid, entry, exit, BLUE_MASK_ITEM_COUNT);
   skeletons = spawnSkeletons(grid, entry, exit, SKELETON_COUNT);
